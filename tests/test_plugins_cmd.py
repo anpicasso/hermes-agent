@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -11,6 +12,7 @@ import pytest
 import yaml
 
 from hermes_cli.plugins_cmd import (
+    _copy_example_files,
     _read_manifest,
     _repo_name_from_url,
     _resolve_git_url,
@@ -100,7 +102,9 @@ class TestRepoNameFromUrl:
     """Extract plugin directory name from Git URLs."""
 
     def test_https_with_dot_git(self):
-        assert _repo_name_from_url("https://github.com/owner/my-plugin.git") == "my-plugin"
+        assert (
+            _repo_name_from_url("https://github.com/owner/my-plugin.git") == "my-plugin"
+        )
 
     def test_https_without_dot_git(self):
         assert _repo_name_from_url("https://github.com/owner/my-plugin") == "my-plugin"
@@ -199,3 +203,207 @@ class TestReadManifest:
         (tmp_path / "plugin.yaml").write_text("")
         result = _read_manifest(tmp_path)
         assert result == {}
+
+
+# ── cmd_install tests ─────────────────────────────────────────────────────────
+
+
+class TestCmdInstall:
+    """Test the install command."""
+
+    def test_install_requires_identifier(self):
+        from hermes_cli.plugins_cmd import cmd_install
+        import argparse
+
+        with pytest.raises(SystemExit):
+            cmd_install("")
+
+    @patch("hermes_cli.plugins_cmd._resolve_git_url")
+    def test_install_validates_identifier(self, mock_resolve):
+        from hermes_cli.plugins_cmd import cmd_install
+
+        mock_resolve.side_effect = ValueError("Invalid identifier")
+
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_install("invalid")
+        assert exc_info.value.code == 1
+
+
+# ── cmd_update tests ─────────────────────────────────────────────────────────
+
+
+class TestCmdUpdate:
+    """Test the update command."""
+
+    @patch("hermes_cli.plugins_cmd._sanitize_plugin_name")
+    @patch("hermes_cli.plugins_cmd._plugins_dir")
+    @patch("hermes_cli.plugins_cmd.subprocess.run")
+    def test_update_git_pull_success(self, mock_run, mock_plugins_dir, mock_sanitize):
+        from hermes_cli.plugins_cmd import cmd_update
+
+        mock_plugins_dir_val = MagicMock()
+        mock_plugins_dir.return_value = mock_plugins_dir_val
+        mock_target = MagicMock()
+        mock_target.exists.return_value = True
+        mock_target.__truediv__ = lambda self, x: MagicMock(
+            exists=MagicMock(return_value=True)
+        )
+        mock_sanitize.return_value = mock_target
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="Updated", stderr="")
+
+        cmd_update("test-plugin")
+
+        mock_run.assert_called_once()
+
+    @patch("hermes_cli.plugins_cmd._sanitize_plugin_name")
+    @patch("hermes_cli.plugins_cmd._plugins_dir")
+    def test_update_plugin_not_found(self, mock_plugins_dir, mock_sanitize):
+        from hermes_cli.plugins_cmd import cmd_update
+
+        mock_plugins_dir_val = MagicMock()
+        mock_plugins_dir_val.iterdir.return_value = []
+        mock_plugins_dir.return_value = mock_plugins_dir_val
+        mock_target = MagicMock()
+        mock_target.exists.return_value = False
+        mock_sanitize.return_value = mock_target
+
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_update("nonexistent-plugin")
+
+        assert exc_info.value.code == 1
+
+
+# ── cmd_remove tests ─────────────────────────────────────────────────────────
+
+
+class TestCmdRemove:
+    """Test the remove command."""
+
+    @patch("hermes_cli.plugins_cmd._sanitize_plugin_name")
+    @patch("hermes_cli.plugins_cmd._plugins_dir")
+    @patch("hermes_cli.plugins_cmd.shutil.rmtree")
+    def test_remove_deletes_plugin(self, mock_rmtree, mock_plugins_dir, mock_sanitize):
+        from hermes_cli.plugins_cmd import cmd_remove
+
+        mock_plugins_dir.return_value = MagicMock()
+        mock_target = MagicMock()
+        mock_target.exists.return_value = True
+        mock_sanitize.return_value = mock_target
+
+        cmd_remove("test-plugin")
+
+        mock_rmtree.assert_called_once_with(mock_target)
+
+    @patch("hermes_cli.plugins_cmd._sanitize_plugin_name")
+    @patch("hermes_cli.plugins_cmd._plugins_dir")
+    def test_remove_plugin_not_found(self, mock_plugins_dir, mock_sanitize):
+        from hermes_cli.plugins_cmd import cmd_remove
+
+        mock_plugins_dir_val = MagicMock()
+        mock_plugins_dir_val.iterdir.return_value = []
+        mock_plugins_dir.return_value = mock_plugins_dir_val
+        mock_target = MagicMock()
+        mock_target.exists.return_value = False
+        mock_sanitize.return_value = mock_target
+
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_remove("nonexistent-plugin")
+
+        assert exc_info.value.code == 1
+
+
+# ── cmd_list tests ─────────────────────────────────────────────────────────
+
+
+class TestCmdList:
+    """Test the list command."""
+
+    @patch("hermes_cli.plugins_cmd._plugins_dir")
+    def test_list_empty_plugins_dir(self, mock_plugins_dir):
+        from hermes_cli.plugins_cmd import cmd_list
+
+        mock_plugins_dir_val = MagicMock()
+        mock_plugins_dir_val.iterdir.return_value = []
+        mock_plugins_dir.return_value = mock_plugins_dir_val
+
+        cmd_list()
+
+    @patch("hermes_cli.plugins_cmd._plugins_dir")
+    @patch("hermes_cli.plugins_cmd._read_manifest")
+    def test_list_with_plugins(self, mock_read_manifest, mock_plugins_dir):
+        from hermes_cli.plugins_cmd import cmd_list
+
+        mock_plugins_dir_val = MagicMock()
+        mock_plugin_dir = MagicMock()
+        mock_plugin_dir.name = "test-plugin"
+        mock_plugin_dir.is_dir.return_value = True
+        mock_plugin_dir.__truediv__ = lambda self, x: MagicMock(
+            exists=MagicMock(return_value=False)
+        )
+        mock_plugins_dir_val.iterdir.return_value = [mock_plugin_dir]
+        mock_plugins_dir.return_value = mock_plugins_dir_val
+        mock_read_manifest.return_value = {"name": "test-plugin", "version": "1.0.0"}
+
+        cmd_list()
+
+
+# ── _copy_example_files tests ─────────────────────────────────────────────────
+
+
+class TestCopyExampleFiles:
+    """Test example file copying."""
+
+    def test_copies_example_files(self, tmp_path):
+        from hermes_cli.plugins_cmd import _copy_example_files
+        from unittest.mock import MagicMock
+
+        console = MagicMock()
+
+        # Create example file
+        example_file = tmp_path / "config.yaml.example"
+        example_file.write_text("key: value")
+
+        _copy_example_files(tmp_path, console)
+
+        # Should have created the file
+        assert (tmp_path / "config.yaml").exists()
+        console.print.assert_called()
+
+    def test_skips_existing_files(self, tmp_path):
+        from hermes_cli.plugins_cmd import _copy_example_files
+        from unittest.mock import MagicMock
+
+        console = MagicMock()
+
+        # Create both example and real file
+        example_file = tmp_path / "config.yaml.example"
+        example_file.write_text("key: value")
+        real_file = tmp_path / "config.yaml"
+        real_file.write_text("existing: true")
+
+        _copy_example_files(tmp_path, console)
+
+        # Should NOT have overwritten
+        assert real_file.read_text() == "existing: true"
+
+    def test_handles_copy_error_gracefully(self, tmp_path):
+        from hermes_cli.plugins_cmd import _copy_example_files
+        from unittest.mock import MagicMock, patch
+
+        console = MagicMock()
+
+        # Create example file
+        example_file = tmp_path / "config.yaml.example"
+        example_file.write_text("key: value")
+
+        # Mock shutil.copy2 to raise an error
+        with patch(
+            "hermes_cli.plugins_cmd.shutil.copy2",
+            side_effect=OSError("Permission denied"),
+        ):
+            # Should not raise, just warn
+            _copy_example_files(tmp_path, console)
+
+        # Should have printed a warning
+        assert any("Warning" in str(c) for c in console.print.call_args_list)

@@ -44,14 +44,15 @@ def _sanitize_plugin_name(name: str, plugins_dir: Path) -> Path:
     # Reject obvious traversal characters
     for bad in ("/", "\\", ".."):
         if bad in name:
-            raise ValueError(
-                f"Invalid plugin name '{name}': must not contain '{bad}'."
-            )
+            raise ValueError(f"Invalid plugin name '{name}': must not contain '{bad}'.")
 
     target = (plugins_dir / name).resolve()
     plugins_resolved = plugins_dir.resolve()
 
-    if not str(target).startswith(str(plugins_resolved) + os.sep) and target != plugins_resolved:
+    if (
+        not str(target).startswith(str(plugins_resolved) + os.sep)
+        and target != plugins_resolved
+    ):
         raise ValueError(
             f"Invalid plugin name '{name}': resolves outside the plugins directory."
         )
@@ -108,6 +109,7 @@ def _read_manifest(plugin_dir: Path) -> dict:
         return {}
     try:
         import yaml
+
         with open(manifest_file) as f:
             return yaml.safe_load(f) or {}
     except Exception as e:
@@ -125,8 +127,15 @@ def _copy_example_files(plugin_dir: Path, console) -> None:
         real_name = example_file.stem  # e.g. "config.yaml" from "config.yaml.example"
         real_path = plugin_dir / real_name
         if not real_path.exists():
-            shutil.copy2(example_file, real_path)
-            console.print(f"[dim]  Created {real_name} from {example_file.name}[/dim]")
+            try:
+                shutil.copy2(example_file, real_path)
+                console.print(
+                    f"[dim]  Created {real_name} from {example_file.name}[/dim]"
+                )
+            except OSError as e:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Failed to copy {example_file.name}: {e}"
+                )
 
 
 def _display_after_install(plugin_dir: Path, identifier: str) -> None:
@@ -172,6 +181,7 @@ def _display_removed(name: str, plugin_dir: Path) -> None:
 # Commands
 # ---------------------------------------------------------------------------
 
+
 def cmd_install(identifier: str, force: bool = False) -> None:
     """Install a plugin from a Git URL or owner/repo shorthand."""
     import tempfile
@@ -214,7 +224,9 @@ def cmd_install(identifier: str, force: bool = False) -> None:
             sys.exit(1)
 
         if result.returncode != 0:
-            console.print(f"[red]Error:[/red] Git clone failed:\n{result.stderr.strip()}")
+            console.print(
+                f"[red]Error:[/red] Git clone failed:\n{result.stderr.strip()}"
+            )
             sys.exit(1)
 
         # Read manifest
@@ -331,7 +343,9 @@ def cmd_update(name: str) -> None:
 
     output = result.stdout.strip()
     if "Already up to date" in output:
-        console.print(f"[green]✓[/green] Plugin [bold]{name}[/bold] is already up to date.")
+        console.print(
+            f"[green]✓[/green] Plugin [bold]{name}[/bold] is already up to date."
+        )
     else:
         console.print(f"[green]✓[/green] Plugin [bold]{name}[/bold] updated.")
         console.print(f"[dim]{output}[/dim]")
@@ -428,5 +442,6 @@ def plugins_command(args) -> None:
         cmd_list()
     else:
         from rich.console import Console
+
         Console().print(f"[red]Unknown plugins action: {action}[/red]")
         sys.exit(1)
