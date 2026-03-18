@@ -167,14 +167,27 @@ def _display_after_install(plugin_dir: Path, identifier: str) -> None:
         console.print()
 
 
-def _display_removed(name: str, plugin_dir: Path) -> None:
+def _display_removed(name: str, plugins_dir: Path) -> None:
     """Show confirmation after removing a plugin."""
     from rich.console import Console
 
     console = Console()
     console.print()
-    console.print(f"[red]✗[/red] Plugin [bold]{name}[/bold] removed from {plugin_dir}")
+    console.print(f"[red]✗[/red] Plugin [bold]{name}[/bold] removed from {plugins_dir}")
     console.print()
+
+
+def _require_installed_plugin(name: str, plugins_dir: Path, console) -> Path:
+    """Return the plugin path if it exists, or exit with an error listing installed plugins."""
+    target = _sanitize_plugin_name(name, plugins_dir)
+    if not target.exists():
+        installed = ", ".join(d.name for d in plugins_dir.iterdir() if d.is_dir()) or "(none)"
+        console.print(
+            f"[red]Error:[/red] Plugin '{name}' not found in {plugins_dir}.\n"
+            f"Installed plugins: {installed}"
+        )
+        sys.exit(1)
+    return target
 
 
 # ---------------------------------------------------------------------------
@@ -298,16 +311,9 @@ def cmd_update(name: str) -> None:
     plugins_dir = _plugins_dir()
 
     try:
-        target = _sanitize_plugin_name(name, plugins_dir)
+        target = _require_installed_plugin(name, plugins_dir, console)
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
-        sys.exit(1)
-
-    if not target.exists():
-        console.print(
-            f"[red]Error:[/red] Plugin '{name}' not found in {plugins_dir}.\n"
-            f"Installed plugins: {', '.join(d.name for d in plugins_dir.iterdir() if d.is_dir()) or '(none)'}"
-        )
         sys.exit(1)
 
     if not (target / ".git").exists():
@@ -359,20 +365,13 @@ def cmd_remove(name: str) -> None:
     plugins_dir = _plugins_dir()
 
     try:
-        target = _sanitize_plugin_name(name, plugins_dir)
+        target = _require_installed_plugin(name, plugins_dir, console)
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
 
-    if not target.exists():
-        console.print(
-            f"[red]Error:[/red] Plugin '{name}' not found in {plugins_dir}.\n"
-            f"Installed plugins: {', '.join(d.name for d in plugins_dir.iterdir() if d.is_dir()) or '(none)'}"
-        )
-        sys.exit(1)
-
     shutil.rmtree(target)
-    _display_removed(name, target)
+    _display_removed(name, plugins_dir)
 
 
 def cmd_list() -> None:
