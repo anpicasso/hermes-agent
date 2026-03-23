@@ -15,7 +15,7 @@ Features:
 
 Usage:
     from run_agent import AIAgent
-    
+
     agent = AIAgent(base_url="http://localhost:30000/v1", model="claude-opus-4-20250514")
     response = agent.run_conversation("Tell me about the latest Python updates")
 """
@@ -28,6 +28,7 @@ import copy
 import hashlib
 import json
 import logging
+
 logger = logging.getLogger(__name__)
 import os
 import random
@@ -50,8 +51,10 @@ from pathlib import Path
 from hermes_cli.env_loader import load_hermes_dotenv
 
 _hermes_home = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes"))
-_project_env = Path(__file__).parent / '.env'
-_loaded_env_paths = load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
+_project_env = Path(__file__).parent / ".env"
+_loaded_env_paths = load_hermes_dotenv(
+    hermes_home=_hermes_home, project_env=_project_env
+)
 if _loaded_env_paths:
     for _env_path in _loaded_env_paths:
         logger.info("Loaded environment variables from %s", _env_path)
@@ -63,7 +66,11 @@ os.environ.setdefault("MSWEA_GLOBAL_CONFIG_DIR", str(_hermes_home))
 os.environ.setdefault("MSWEA_SILENT_STARTUP", "1")
 
 # Import our tool system
-from model_tools import get_tool_definitions, handle_function_call, check_toolset_requirements
+from model_tools import (
+    get_tool_definitions,
+    handle_function_call,
+    check_toolset_requirements,
+)
 from tools.terminal_tool import cleanup_vm
 from tools.interrupt import set_interrupt as _set_interrupt
 from tools.browser_tool import cleanup_browser
@@ -74,27 +81,38 @@ from hermes_constants import OPENROUTER_BASE_URL
 
 # Agent internals extracted to agent/ package for modularity
 from agent.prompt_builder import (
-    DEFAULT_AGENT_IDENTITY, PLATFORM_HINTS,
-    MEMORY_GUIDANCE, SESSION_SEARCH_GUIDANCE, SKILLS_GUIDANCE,
+    DEFAULT_AGENT_IDENTITY,
+    PLATFORM_HINTS,
+    MEMORY_GUIDANCE,
+    SESSION_SEARCH_GUIDANCE,
+    SKILLS_GUIDANCE,
 )
 from agent.model_metadata import (
     fetch_model_metadata,
-    estimate_tokens_rough, estimate_messages_tokens_rough,
-    get_next_probe_tier, parse_context_limit_from_error,
+    estimate_tokens_rough,
+    estimate_messages_tokens_rough,
+    get_next_probe_tier,
+    parse_context_limit_from_error,
     save_context_length,
 )
 from agent.context_compressor import ContextCompressor
 from agent.prompt_caching import apply_anthropic_cache_control
-from agent.prompt_builder import build_skills_system_prompt, build_context_files_prompt, load_soul_md
+from agent.prompt_builder import (
+    build_skills_system_prompt,
+    build_context_files_prompt,
+    load_soul_md,
+)
 from agent.usage_pricing import estimate_usage_cost, normalize_usage
 from agent.display import (
-    KawaiiSpinner, build_tool_preview as _build_tool_preview,
+    KawaiiSpinner,
+    build_tool_preview as _build_tool_preview,
     get_cute_tool_message as _get_cute_tool_message_impl,
     _detect_tool_failure,
     get_tool_emoji as _get_tool_emoji,
 )
 from agent.trajectory import (
-    convert_scratchpad_to_think, has_incomplete_scratchpad,
+    convert_scratchpad_to_think,
+    has_incomplete_scratchpad,
     save_trajectory as _save_trajectory_to_file,
 )
 from utils import atomic_json_write
@@ -209,22 +227,24 @@ class IterationBudget:
 _NEVER_PARALLEL_TOOLS = frozenset({"clarify"})
 
 # Read-only tools with no shared mutable session state.
-_PARALLEL_SAFE_TOOLS = frozenset({
-    "ha_get_state",
-    "ha_list_entities",
-    "ha_list_services",
-    "honcho_context",
-    "honcho_profile",
-    "honcho_search",
-    "read_file",
-    "search_files",
-    "session_search",
-    "skill_view",
-    "skills_list",
-    "vision_analyze",
-    "web_extract",
-    "web_search",
-})
+_PARALLEL_SAFE_TOOLS = frozenset(
+    {
+        "ha_get_state",
+        "ha_list_entities",
+        "ha_list_services",
+        "honcho_context",
+        "honcho_profile",
+        "honcho_search",
+        "read_file",
+        "search_files",
+        "session_search",
+        "skill_view",
+        "skills_list",
+        "vision_analyze",
+        "web_extract",
+        "web_search",
+    }
+)
 
 # File tools can run concurrently when they target independent paths.
 _PATH_SCOPED_TOOLS = frozenset({"read_file", "write_file", "patch"})
@@ -246,7 +266,7 @@ _DESTRUCTIVE_PATTERNS = re.compile(
     re.VERBOSE,
 )
 # Output redirects that overwrite files (> but not >>)
-_REDIRECT_OVERWRITE = re.compile(r'[^>]>[^>]|^>[^>]')
+_REDIRECT_OVERWRITE = re.compile(r"[^>]>[^>]|^>[^>]")
 
 
 def _is_destructive_command(cmd: str) -> bool:
@@ -293,7 +313,9 @@ def _should_parallelize_tool_batch(tool_calls) -> bool:
             scoped_path = _extract_parallel_scope_path(tool_name, function_args)
             if scoped_path is None:
                 return False
-            if any(_paths_overlap(scoped_path, existing) for existing in reserved_paths):
+            if any(
+                _paths_overlap(scoped_path, existing) for existing in reserved_paths
+            ):
                 return False
             reserved_paths.append(scoped_path)
             continue
@@ -490,7 +512,11 @@ class AIAgent:
         # Store effective base URL for feature detection (prompt caching, reasoning, etc.)
         # When no base_url is provided, the client defaults to OpenRouter, so reflect that here.
         self.base_url = base_url or OPENROUTER_BASE_URL
-        provider_name = provider.strip().lower() if isinstance(provider, str) and provider.strip() else None
+        provider_name = (
+            provider.strip().lower()
+            if isinstance(provider, str) and provider.strip()
+            else None
+        )
         self.provider = provider_name or "openrouter"
         self.acp_command = acp_command or command
         self.acp_args = list(acp_args or args or [])
@@ -498,10 +524,14 @@ class AIAgent:
             self.api_mode = api_mode
         elif self.provider == "openai-codex":
             self.api_mode = "codex_responses"
-        elif (provider_name is None) and "chatgpt.com/backend-api/codex" in self._base_url_lower:
+        elif (
+            provider_name is None
+        ) and "chatgpt.com/backend-api/codex" in self._base_url_lower:
             self.api_mode = "codex_responses"
             self.provider = "openai-codex"
-        elif self.provider == "anthropic" or (provider_name is None and "api.anthropic.com" in self._base_url_lower):
+        elif self.provider == "anthropic" or (
+            provider_name is None and "api.anthropic.com" in self._base_url_lower
+        ):
             self.api_mode = "anthropic_messages"
             self.provider = "anthropic"
         elif self._base_url_lower.rstrip("/").endswith("/anthropic"):
@@ -535,7 +565,7 @@ class AIAgent:
         self.stream_delta_callback = stream_delta_callback
         self.status_callback = status_callback
         self._last_reported_tool = None  # Track for "new tool" mode
-        
+
         # Tool execution state — allows _vprint during tool execution
         # even when stream consumers are registered (no tokens streaming then)
         self._executing_tools = False
@@ -544,12 +574,12 @@ class AIAgent:
         self._interrupt_requested = False
         self._interrupt_message = None  # Optional message that triggered interrupt
         self._client_lock = threading.RLock()
-        
+
         # Subagent delegation state
-        self._delegate_depth = 0        # 0 = top-level agent, incremented for children
-        self._active_children = []      # Running child AIAgents (for interrupt propagation)
+        self._delegate_depth = 0  # 0 = top-level agent, incremented for children
+        self._active_children = []  # Running child AIAgents (for interrupt propagation)
         self._active_children_lock = threading.Lock()
-        
+
         # Store OpenRouter provider preferences
         self.providers_allowed = providers_allowed
         self.providers_ignored = providers_ignored
@@ -561,12 +591,14 @@ class AIAgent:
         # Store toolset filtering options
         self.enabled_toolsets = enabled_toolsets
         self.disabled_toolsets = disabled_toolsets
-        
+
         # Model response configuration
         self.max_tokens = max_tokens  # None = use model default
-        self.reasoning_config = reasoning_config  # None = use default (medium for OpenRouter)
+        self.reasoning_config = (
+            reasoning_config  # None = use default (medium for OpenRouter)
+        )
         self.prefill_messages = prefill_messages or []  # Prefilled conversation turns
-        
+
         # Anthropic prompt caching: auto-enabled for Claude models via OpenRouter.
         # Reduces input costs by ~75% on multi-turn conversations by caching the
         # conversation prefix. Uses system_and_3 strategy (4 breakpoints).
@@ -575,12 +607,12 @@ class AIAgent:
         is_native_anthropic = self.api_mode == "anthropic_messages"
         self._use_prompt_caching = (is_openrouter and is_claude) or is_native_anthropic
         self._cache_ttl = "5m"  # Default 5-minute TTL (1.25x write cost)
-        
+
         # Iteration budget pressure: warn the LLM as it approaches max_iterations.
         # Warnings are injected into the last tool result JSON (not as separate
         # messages) so they don't break message structure or invalidate caching.
-        self._budget_caution_threshold = 0.7   # 70% — nudge to start wrapping up
-        self._budget_warning_threshold = 0.9   # 90% — urgent, respond now
+        self._budget_caution_threshold = 0.7  # 70% — nudge to start wrapping up
+        self._budget_warning_threshold = 0.9  # 90% — urgent, respond now
         self._budget_pressure_enabled = True
 
         # Context pressure warnings: notify the USER (not the LLM) as context
@@ -595,78 +627,89 @@ class AIAgent:
         # while the root logger is process-global. Re-adding the same errors.log
         # handler would cause each warning/error line to be written multiple times.
         from logging.handlers import RotatingFileHandler
+
         root_logger = logging.getLogger()
         error_log_dir = _hermes_home / "logs"
         error_log_path = error_log_dir / "errors.log"
         resolved_error_log_path = error_log_path.resolve()
         has_errors_log_handler = any(
             isinstance(handler, RotatingFileHandler)
-            and Path(getattr(handler, "baseFilename", "")).resolve() == resolved_error_log_path
+            and Path(getattr(handler, "baseFilename", "")).resolve()
+            == resolved_error_log_path
             for handler in root_logger.handlers
         )
         from agent.redact import RedactingFormatter
+
         if not has_errors_log_handler:
             error_log_dir.mkdir(parents=True, exist_ok=True)
             error_file_handler = RotatingFileHandler(
-                error_log_path, maxBytes=2 * 1024 * 1024, backupCount=2,
+                error_log_path,
+                maxBytes=2 * 1024 * 1024,
+                backupCount=2,
             )
             error_file_handler.setLevel(logging.WARNING)
-            error_file_handler.setFormatter(RedactingFormatter(
-                '%(asctime)s %(levelname)s %(name)s: %(message)s',
-            ))
+            error_file_handler.setFormatter(
+                RedactingFormatter(
+                    "%(asctime)s %(levelname)s %(name)s: %(message)s",
+                )
+            )
             root_logger.addHandler(error_file_handler)
 
         if self.verbose_logging:
             logging.basicConfig(
                 level=logging.DEBUG,
-                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                datefmt='%H:%M:%S'
+                format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                datefmt="%H:%M:%S",
             )
             for handler in logging.getLogger().handlers:
-                handler.setFormatter(RedactingFormatter(
-                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    datefmt='%H:%M:%S',
-                ))
+                handler.setFormatter(
+                    RedactingFormatter(
+                        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                        datefmt="%H:%M:%S",
+                    )
+                )
             # Keep third-party libraries at WARNING level to reduce noise
             # We have our own retry and error logging that's more informative
-            logging.getLogger('openai').setLevel(logging.WARNING)
-            logging.getLogger('openai._base_client').setLevel(logging.WARNING)
-            logging.getLogger('httpx').setLevel(logging.WARNING)
-            logging.getLogger('httpcore').setLevel(logging.WARNING)
-            logging.getLogger('asyncio').setLevel(logging.WARNING)
+            logging.getLogger("openai").setLevel(logging.WARNING)
+            logging.getLogger("openai._base_client").setLevel(logging.WARNING)
+            logging.getLogger("httpx").setLevel(logging.WARNING)
+            logging.getLogger("httpcore").setLevel(logging.WARNING)
+            logging.getLogger("asyncio").setLevel(logging.WARNING)
             # Suppress Modal/gRPC related debug spam
-            logging.getLogger('hpack').setLevel(logging.WARNING)
-            logging.getLogger('hpack.hpack').setLevel(logging.WARNING)
-            logging.getLogger('grpc').setLevel(logging.WARNING)
-            logging.getLogger('modal').setLevel(logging.WARNING)
-            logging.getLogger('rex-deploy').setLevel(logging.INFO)  # Keep INFO for sandbox status
+            logging.getLogger("hpack").setLevel(logging.WARNING)
+            logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
+            logging.getLogger("grpc").setLevel(logging.WARNING)
+            logging.getLogger("modal").setLevel(logging.WARNING)
+            logging.getLogger("rex-deploy").setLevel(
+                logging.INFO
+            )  # Keep INFO for sandbox status
             logger.info("Verbose logging enabled (third-party library logs suppressed)")
         else:
             # Set logging to INFO level for important messages only
             logging.basicConfig(
                 level=logging.INFO,
-                format='%(asctime)s - %(levelname)s - %(message)s',
-                datefmt='%H:%M:%S'
+                format="%(asctime)s - %(levelname)s - %(message)s",
+                datefmt="%H:%M:%S",
             )
             # Suppress noisy library logging
-            logging.getLogger('openai').setLevel(logging.ERROR)
-            logging.getLogger('openai._base_client').setLevel(logging.ERROR)
-            logging.getLogger('httpx').setLevel(logging.ERROR)
-            logging.getLogger('httpcore').setLevel(logging.ERROR)
+            logging.getLogger("openai").setLevel(logging.ERROR)
+            logging.getLogger("openai._base_client").setLevel(logging.ERROR)
+            logging.getLogger("httpx").setLevel(logging.ERROR)
+            logging.getLogger("httpcore").setLevel(logging.ERROR)
             if self.quiet_mode:
                 # In quiet mode (CLI default), suppress all tool/infra log
                 # noise. The TUI has its own rich display for status; logger
                 # INFO/WARNING messages just clutter it.
                 for quiet_logger in [
-                    'tools',               # all tools.* (terminal, browser, web, file, etc.)
-                    'minisweagent',         # mini-swe-agent execution backend
-                    'run_agent',            # agent runner internals
-                    'trajectory_compressor',
-                    'cron',                 # scheduler (only relevant in daemon mode)
-                    'hermes_cli',           # CLI helpers
+                    "tools",  # all tools.* (terminal, browser, web, file, etc.)
+                    "minisweagent",  # mini-swe-agent execution backend
+                    "run_agent",  # agent runner internals
+                    "trajectory_compressor",
+                    "cron",  # scheduler (only relevant in daemon mode)
+                    "hermes_cli",  # CLI helpers
                 ]:
                     logging.getLogger(quiet_logger).setLevel(logging.ERROR)
-        
+
         # Internal stream callback (set during streaming TTS).
         # Initialized here so _vprint can reference it before run_conversation.
         self._stream_callback = None
@@ -693,23 +736,34 @@ class AIAgent:
         self._anthropic_client = None
 
         if self.api_mode == "anthropic_messages":
-            from agent.anthropic_adapter import build_anthropic_client, resolve_anthropic_token
+            from agent.anthropic_adapter import (
+                build_anthropic_client,
+                resolve_anthropic_token,
+            )
+
             # Only fall back to ANTHROPIC_TOKEN when the provider is actually Anthropic.
             # Other anthropic_messages providers (MiniMax, Alibaba, etc.) must use their own API key.
             # Falling back would send Anthropic credentials to third-party endpoints (Fixes #1739, #minimax-401).
             _is_native_anthropic = self.provider == "anthropic"
-            effective_key = (api_key or resolve_anthropic_token() or "") if _is_native_anthropic else (api_key or "")
+            effective_key = (
+                (api_key or resolve_anthropic_token() or "")
+                if _is_native_anthropic
+                else (api_key or "")
+            )
             self.api_key = effective_key
             self._anthropic_api_key = effective_key
             self._anthropic_base_url = base_url
             from agent.anthropic_adapter import _is_oauth_token as _is_oat
+
             self._is_anthropic_oauth = _is_oat(effective_key)
             self._anthropic_client = build_anthropic_client(effective_key, base_url)
             # No OpenAI client needed for Anthropic mode
             self.client = None
             self._client_kwargs = {}
             if not self.quiet_mode:
-                print(f"🤖 AI Agent initialized with model: {self.model} (Anthropic native)")
+                print(
+                    f"🤖 AI Agent initialized with model: {self.model} (Anthropic native)"
+                )
                 if effective_key and len(effective_key) > 12:
                     print(f"🔑 Using token: {effective_key[:8]}...{effective_key[-4:]}")
         else:
@@ -738,16 +792,23 @@ class AIAgent:
             else:
                 # No explicit creds — use the centralized provider router
                 from agent.auxiliary_client import resolve_provider_client
+
                 _routed_client, _ = resolve_provider_client(
-                    self.provider or "auto", model=self.model, raw_codex=True)
+                    self.provider or "auto", model=self.model, raw_codex=True
+                )
                 if _routed_client is not None:
                     client_kwargs = {
                         "api_key": _routed_client.api_key,
                         "base_url": str(_routed_client.base_url),
                     }
                     # Preserve any default_headers the router set
-                    if hasattr(_routed_client, '_default_headers') and _routed_client._default_headers:
-                        client_kwargs["default_headers"] = dict(_routed_client._default_headers)
+                    if (
+                        hasattr(_routed_client, "_default_headers")
+                        and _routed_client._default_headers
+                    ):
+                        client_kwargs["default_headers"] = dict(
+                            _routed_client._default_headers
+                        )
                 else:
                     # When the user explicitly chose a non-OpenRouter provider
                     # but no credentials were found, fail fast with a clear
@@ -769,11 +830,13 @@ class AIAgent:
                             "X-OpenRouter-Categories": "productivity,cli-agent",
                         },
                     }
-            
+
             self._client_kwargs = client_kwargs  # stored for rebuilding after interrupt
             self.api_key = client_kwargs.get("api_key", "")
             try:
-                self.client = self._create_openai_client(client_kwargs, reason="agent_init", shared=True)
+                self.client = self._create_openai_client(
+                    client_kwargs, reason="agent_init", shared=True
+                )
                 if not self.quiet_mode:
                     print(f"🤖 AI Agent initialized with model: {self.model}")
                     if base_url:
@@ -783,14 +846,18 @@ class AIAgent:
                     if key_used and key_used != "dummy-key" and len(key_used) > 12:
                         print(f"🔑 Using API key: {key_used[:8]}...{key_used[-4:]}")
                     else:
-                        print(f"⚠️  Warning: API key appears invalid or missing (got: '{key_used[:20] if key_used else 'none'}...')")
+                        print(
+                            f"⚠️  Warning: API key appears invalid or missing (got: '{key_used[:20] if key_used else 'none'}...')"
+                        )
             except Exception as e:
                 raise RuntimeError(f"Failed to initialize OpenAI client: {e}")
-        
+
         # Provider fallback — a single backup model/provider tried when the
         # primary is exhausted (rate-limit, overload, connection failure).
         # Config shape: {"provider": "openrouter", "model": "anthropic/claude-sonnet-4"}
-        self._fallback_model = fallback_model if isinstance(fallback_model, dict) else None
+        self._fallback_model = (
+            fallback_model if isinstance(fallback_model, dict) else None
+        )
         self._fallback_activated = False
         if self._fallback_model:
             fb_p = self._fallback_model.get("provider", "")
@@ -804,7 +871,7 @@ class AIAgent:
             disabled_toolsets=disabled_toolsets,
             quiet_mode=self.quiet_mode,
         )
-        
+
         # Show tool configuration and store valid tool names for validation
         self.valid_tool_names = set()
         if self.tools:
@@ -812,7 +879,7 @@ class AIAgent:
             tool_names = sorted(self.valid_tool_names)
             if not self.quiet_mode:
                 print(f"🛠️  Loaded {len(self.tools)} tools: {', '.join(tool_names)}")
-                
+
                 # Show filtering info if applied
                 if enabled_toolsets:
                     print(f"   ✅ Enabled toolsets: {', '.join(enabled_toolsets)}")
@@ -820,28 +887,40 @@ class AIAgent:
                     print(f"   ❌ Disabled toolsets: {', '.join(disabled_toolsets)}")
         elif not self.quiet_mode:
             print("🛠️  No tools loaded (all tools filtered out or unavailable)")
-        
+
         # Check tool requirements
         if self.tools and not self.quiet_mode:
             requirements = check_toolset_requirements()
-            missing_reqs = [name for name, available in requirements.items() if not available]
+            missing_reqs = [
+                name for name, available in requirements.items() if not available
+            ]
             if missing_reqs:
-                print(f"⚠️  Some tools may not work due to missing requirements: {missing_reqs}")
-        
+                print(
+                    f"⚠️  Some tools may not work due to missing requirements: {missing_reqs}"
+                )
+
         # Show trajectory saving status
         if self.save_trajectories and not self.quiet_mode:
             print("📝 Trajectory saving enabled")
-        
+
         # Show ephemeral system prompt status
         if self.ephemeral_system_prompt and not self.quiet_mode:
-            prompt_preview = self.ephemeral_system_prompt[:60] + "..." if len(self.ephemeral_system_prompt) > 60 else self.ephemeral_system_prompt
-            print(f"🔒 Ephemeral system prompt: '{prompt_preview}' (not saved to trajectories)")
-        
+            prompt_preview = (
+                self.ephemeral_system_prompt[:60] + "..."
+                if len(self.ephemeral_system_prompt) > 60
+                else self.ephemeral_system_prompt
+            )
+            print(
+                f"🔒 Ephemeral system prompt: '{prompt_preview}' (not saved to trajectories)"
+            )
+
         # Show prompt caching status
         if self._use_prompt_caching and not self.quiet_mode:
-            source = "native Anthropic" if is_native_anthropic else "Claude via OpenRouter"
+            source = (
+                "native Anthropic" if is_native_anthropic else "Claude via OpenRouter"
+            )
             print(f"💾 Prompt caching: ENABLED ({source}, {self._cache_ttl} TTL)")
-        
+
         # Session logging setup - auto-save conversation trajectories for debugging
         self.session_start = datetime.now()
         if session_id:
@@ -852,29 +931,32 @@ class AIAgent:
             timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
             short_uuid = uuid.uuid4().hex[:6]
             self.session_id = f"{timestamp_str}_{short_uuid}"
-        
+
         # Session logs go into ~/.hermes/sessions/ alongside gateway sessions
         hermes_home = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes"))
         self.logs_dir = hermes_home / "sessions"
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.session_log_file = self.logs_dir / f"session_{self.session_id}.json"
-        
+
         # Track conversation messages for session logging
         self._session_messages: List[Dict[str, Any]] = []
-        
+
         # Cached system prompt -- built once per session, only rebuilt on compression
         self._cached_system_prompt: Optional[str] = None
-        
+
         # Filesystem checkpoint manager (transparent — not a tool)
         from tools.checkpoint_manager import CheckpointManager
+
         self._checkpoint_mgr = CheckpointManager(
             enabled=checkpoints_enabled,
             max_snapshots=checkpoint_max_snapshots,
         )
-        
+
         # SQLite session store (optional -- provided by CLI or gateway)
         self._session_db = session_db
-        self._last_flushed_db_idx = 0  # tracks DB-write cursor to prevent duplicate writes
+        self._last_flushed_db_idx = (
+            0  # tracks DB-write cursor to prevent duplicate writes
+        )
         if self._session_db:
             try:
                 self._session_db.create_session(
@@ -890,14 +972,16 @@ class AIAgent:
                 )
             except Exception as e:
                 logger.debug("Session DB create_session failed: %s", e)
-        
+
         # In-memory todo list for task planning (one per agent/session)
         from tools.todo_tool import TodoStore
+
         self._todo_store = TodoStore()
-        
+
         # Load config once for memory, skills, and compression sections
         try:
             from hermes_cli.config import load_config as _load_agent_config
+
             _agent_cfg = _load_agent_config()
         except Exception:
             _agent_cfg = {}
@@ -914,11 +998,14 @@ class AIAgent:
             try:
                 mem_config = _agent_cfg.get("memory", {})
                 self._memory_enabled = mem_config.get("memory_enabled", False)
-                self._user_profile_enabled = mem_config.get("user_profile_enabled", False)
+                self._user_profile_enabled = mem_config.get(
+                    "user_profile_enabled", False
+                )
                 self._memory_nudge_interval = int(mem_config.get("nudge_interval", 10))
                 self._memory_flush_min_turns = int(mem_config.get("flush_min_turns", 6))
                 if self._memory_enabled or self._user_profile_enabled:
                     from tools.memory_tool import MemoryStore
+
                     self._memory_store = MemoryStore(
                         memory_char_limit=mem_config.get("memory_char_limit", 2200),
                         user_char_limit=mem_config.get("user_char_limit", 1375),
@@ -926,7 +1013,7 @@ class AIAgent:
                     self._memory_store.load_from_disk()
             except Exception:
                 pass  # Memory is optional -- don't break agent init
-        
+
         # Honcho AI-native memory (cross-session user modeling)
         # Reads $HERMES_HOME/honcho.json (instance) or ~/.honcho/config.json (global).
         self._honcho = None  # HonchoSessionManager | None
@@ -947,11 +1034,16 @@ class AIAgent:
                             session_db=session_db,
                         )
                 else:
-                    from honcho_integration.client import HonchoClientConfig, get_honcho_client
+                    from honcho_integration.client import (
+                        HonchoClientConfig,
+                        get_honcho_client,
+                    )
+
                     hcfg = HonchoClientConfig.from_global_config()
                     self._honcho_config = hcfg
                     if self._honcho_should_activate(hcfg):
                         from honcho_integration.session import HonchoSessionManager
+
                         client = get_honcho_client(hcfg)
                         self._honcho = HonchoSessionManager(
                             honcho=client,
@@ -970,7 +1062,9 @@ class AIAgent:
                         elif not hcfg.api_key:
                             logger.debug("Honcho enabled but no API key configured")
                         else:
-                            logger.debug("Honcho enabled but missing API key or disabled in config")
+                            logger.debug(
+                                "Honcho enabled but missing API key or disabled in config"
+                            )
             except Exception as e:
                 logger.warning("Honcho init failed — memory disabled: %s", e)
                 print(f"  Honcho init failed: {e}")
@@ -992,16 +1086,24 @@ class AIAgent:
             if _agent_mode == "honcho":
                 self._memory_flush_min_turns = 0
                 self._memory_enabled = False
-                logger.debug("peer %s memory_mode=honcho: local MEMORY.md writes disabled", _hcfg.ai_peer)
+                logger.debug(
+                    "peer %s memory_mode=honcho: local MEMORY.md writes disabled",
+                    _hcfg.ai_peer,
+                )
             if _user_mode == "honcho":
                 self._user_profile_enabled = False
-                logger.debug("peer %s memory_mode=honcho: local USER.md writes disabled", _hcfg.peer_name or "user")
+                logger.debug(
+                    "peer %s memory_mode=honcho: local USER.md writes disabled",
+                    _hcfg.peer_name or "user",
+                )
 
         # Skills config: nudge interval for skill creation reminders
         self._skill_nudge_interval = 10
         try:
             skills_config = _agent_cfg.get("skills", {})
-            self._skill_nudge_interval = int(skills_config.get("creation_nudge_interval", 10))
+            self._skill_nudge_interval = int(
+                skills_config.get("creation_nudge_interval", 10)
+            )
         except Exception:
             pass
 
@@ -1012,7 +1114,11 @@ class AIAgent:
         if not isinstance(_compression_cfg, dict):
             _compression_cfg = {}
         compression_threshold = float(_compression_cfg.get("threshold", 0.50))
-        compression_enabled = str(_compression_cfg.get("enabled", True)).lower() in ("true", "1", "yes")
+        compression_enabled = str(_compression_cfg.get("enabled", True)).lower() in (
+            "true",
+            "1",
+            "yes",
+        )
         compression_summary_model = _compression_cfg.get("summary_model") or None
 
         # Read explicit context_length override from model config
@@ -1047,7 +1153,7 @@ class AIAgent:
                                     except (TypeError, ValueError):
                                         pass
                         break
-        
+
         self.context_compressor = ContextCompressor(
             model=self.model,
             threshold_percent=compression_threshold,
@@ -1077,16 +1183,20 @@ class AIAgent:
         self.session_estimated_cost_usd = 0.0
         self.session_cost_status = "unknown"
         self.session_cost_source = "none"
-        
+
         if not self.quiet_mode:
             if compression_enabled:
-                print(f"📊 Context limit: {self.context_compressor.context_length:,} tokens (compress at {int(compression_threshold*100)}% = {self.context_compressor.threshold_tokens:,})")
+                print(
+                    f"📊 Context limit: {self.context_compressor.context_length:,} tokens (compress at {int(compression_threshold * 100)}% = {self.context_compressor.threshold_tokens:,})"
+                )
             else:
-                print(f"📊 Context limit: {self.context_compressor.context_length:,} tokens (auto-compression disabled)")
+                print(
+                    f"📊 Context limit: {self.context_compressor.context_length:,} tokens (auto-compression disabled)"
+                )
 
     def reset_session_state(self):
         """Reset all session-scoped token counters to 0 for a fresh session.
-        
+
         This method encapsulates the reset logic for all session-level metrics
         including:
         - Token usage counters (input, output, total, prompt, completion)
@@ -1095,10 +1205,10 @@ class AIAgent:
         - Reasoning tokens
         - Estimated cost tracking
         - Context compressor internal counters
-        
+
         The method safely handles optional attributes (e.g., context compressor)
         using ``hasattr`` checks.
-        
+
         This keeps the counter reset logic DRY and maintainable in one place
         rather than scattering it across multiple methods.
         """
@@ -1115,7 +1225,7 @@ class AIAgent:
         self.session_estimated_cost_usd = 0.0
         self.session_cost_status = "unknown"
         self.session_cost_source = "none"
-        
+
         # Context compressor internal counters (if present)
         if hasattr(self, "context_compressor") and self.context_compressor:
             self.context_compressor.last_prompt_tokens = 0
@@ -1123,7 +1233,7 @@ class AIAgent:
             self.context_compressor.last_total_tokens = 0
             self.context_compressor.compression_count = 0
             self.context_compressor._context_probed = False
-    
+
     def _safe_print(self, *args, **kwargs):
         """Print that silently handles broken pipes / closed stdout.
 
@@ -1169,7 +1279,7 @@ class AIAgent:
 
     def _max_tokens_param(self, value: int) -> dict:
         """Return the correct max tokens kwarg for the current provider.
-        
+
         OpenAI's newer models (gpt-4o, o-series, gpt-5+) require
         'max_completion_tokens'. OpenRouter, local models, and older
         OpenAI models use 'max_tokens'.
@@ -1200,17 +1310,24 @@ class AIAgent:
 
         # Check if there's any non-whitespace content remaining
         return bool(cleaned.strip())
-    
+
     def _strip_think_blocks(self, content: str) -> str:
         """Remove reasoning/thinking blocks from content, returning only visible text."""
         if not content:
             return ""
         # Strip all reasoning tag variants: <think>, <thinking>, <THINKING>,
         # <reasoning>, <REASONING_SCRATCHPAD>
-        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
-        content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL | re.IGNORECASE)
-        content = re.sub(r'<reasoning>.*?</reasoning>', '', content, flags=re.DOTALL)
-        content = re.sub(r'<REASONING_SCRATCHPAD>.*?</REASONING_SCRATCHPAD>', '', content, flags=re.DOTALL)
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+        content = re.sub(
+            r"<thinking>.*?</thinking>", "", content, flags=re.DOTALL | re.IGNORECASE
+        )
+        content = re.sub(r"<reasoning>.*?</reasoning>", "", content, flags=re.DOTALL)
+        content = re.sub(
+            r"<REASONING_SCRATCHPAD>.*?</REASONING_SCRATCHPAD>",
+            "",
+            content,
+            flags=re.DOTALL,
+        )
         return content
 
     def _looks_like_codex_intermediate_ack(
@@ -1223,14 +1340,19 @@ class AIAgent:
         if any(isinstance(msg, dict) and msg.get("role") == "tool" for msg in messages):
             return False
 
-        assistant_text = self._strip_think_blocks(assistant_content or "").strip().lower()
+        assistant_text = (
+            self._strip_think_blocks(assistant_content or "").strip().lower()
+        )
         if not assistant_text:
             return False
         if len(assistant_text) > 1200:
             return False
 
         has_future_ack = bool(
-            re.search(r"\b(i['’]ll|i will|let me|i can do that|i can help with that)\b", assistant_text)
+            re.search(
+                r"\b(i['’]ll|i will|let me|i can do that|i can help with that)\b",
+                assistant_text,
+            )
         )
         if not has_future_ack:
             return False
@@ -1278,56 +1400,69 @@ class AIAgent:
             or "~/" in user_text
             or "/" in user_text
         )
-        assistant_mentions_action = any(marker in assistant_text for marker in action_markers)
+        assistant_mentions_action = any(
+            marker in assistant_text for marker in action_markers
+        )
         assistant_targets_workspace = any(
             marker in assistant_text for marker in workspace_markers
         )
-        return (user_targets_workspace or assistant_targets_workspace) and assistant_mentions_action
-    
-    
+        return (
+            user_targets_workspace or assistant_targets_workspace
+        ) and assistant_mentions_action
+
     def _extract_reasoning(self, assistant_message) -> Optional[str]:
         """
         Extract reasoning/thinking content from an assistant message.
-        
+
         OpenRouter and various providers can return reasoning in multiple formats:
         1. message.reasoning - Direct reasoning field (DeepSeek, Qwen, etc.)
         2. message.reasoning_content - Alternative field (Moonshot AI, Novita, etc.)
         3. message.reasoning_details - Array of {type, summary, ...} objects (OpenRouter unified)
-        
+
         Args:
             assistant_message: The assistant message object from the API response
-            
+
         Returns:
             Combined reasoning text, or None if no reasoning found
         """
         reasoning_parts = []
-        
+
         # Check direct reasoning field
-        if hasattr(assistant_message, 'reasoning') and assistant_message.reasoning:
+        if hasattr(assistant_message, "reasoning") and assistant_message.reasoning:
             reasoning_parts.append(assistant_message.reasoning)
-        
+
         # Check reasoning_content field (alternative name used by some providers)
-        if hasattr(assistant_message, 'reasoning_content') and assistant_message.reasoning_content:
+        if (
+            hasattr(assistant_message, "reasoning_content")
+            and assistant_message.reasoning_content
+        ):
             # Don't duplicate if same as reasoning
             if assistant_message.reasoning_content not in reasoning_parts:
                 reasoning_parts.append(assistant_message.reasoning_content)
-        
+
         # Check reasoning_details array (OpenRouter unified format)
         # Format: [{"type": "reasoning.summary", "summary": "...", ...}, ...]
-        if hasattr(assistant_message, 'reasoning_details') and assistant_message.reasoning_details:
+        if (
+            hasattr(assistant_message, "reasoning_details")
+            and assistant_message.reasoning_details
+        ):
             for detail in assistant_message.reasoning_details:
                 if isinstance(detail, dict):
                     # Extract summary from reasoning detail object
-                    summary = detail.get('summary') or detail.get('content') or detail.get('text')
+                    summary = (
+                        detail.get("summary")
+                        or detail.get("content")
+                        or detail.get("text")
+                    )
                     if summary and summary not in reasoning_parts:
                         reasoning_parts.append(summary)
-        
+
         # Combine all reasoning parts
         if reasoning_parts:
             return "\n\n".join(reasoning_parts)
-        
+
         return None
-    
+
     def _cleanup_task_resources(self, task_id: str) -> None:
         """Clean up VM and browser resources for a given task."""
         try:
@@ -1405,11 +1540,14 @@ class AIAgent:
 
         def _run_review():
             import contextlib, os as _os
+
             review_agent = None
             try:
-                with open(_os.devnull, "w") as _devnull, \
-                     contextlib.redirect_stdout(_devnull), \
-                     contextlib.redirect_stderr(_devnull):
+                with (
+                    open(_os.devnull, "w") as _devnull,
+                    contextlib.redirect_stdout(_devnull),
+                    contextlib.redirect_stderr(_devnull),
+                ):
                     review_agent = AIAgent(
                         model=self.model,
                         max_iterations=8,
@@ -1446,14 +1584,34 @@ class AIAgent:
                         actions.append(message)
                     elif "updated" in message.lower():
                         actions.append(message)
-                    elif "added" in message.lower() or (target and "add" in message.lower()):
-                        label = "Memory" if target == "memory" else "User profile" if target == "user" else target
+                    elif "added" in message.lower() or (
+                        target and "add" in message.lower()
+                    ):
+                        label = (
+                            "Memory"
+                            if target == "memory"
+                            else "User profile"
+                            if target == "user"
+                            else target
+                        )
                         actions.append(f"{label} updated")
                     elif "Entry added" in message:
-                        label = "Memory" if target == "memory" else "User profile" if target == "user" else target
+                        label = (
+                            "Memory"
+                            if target == "memory"
+                            else "User profile"
+                            if target == "user"
+                            else target
+                        )
                         actions.append(f"{label} updated")
                     elif "removed" in message.lower() or "replaced" in message.lower():
-                        label = "Memory" if target == "memory" else "User profile" if target == "user" else target
+                        label = (
+                            "Memory"
+                            if target == "memory"
+                            else "User profile"
+                            if target == "user"
+                            else target
+                        )
                         actions.append(f"{label} updated")
 
                 if actions:
@@ -1498,7 +1656,9 @@ class AIAgent:
             if isinstance(msg, dict) and msg.get("role") == "user":
                 msg["content"] = override
 
-    def _persist_session(self, messages: List[Dict], conversation_history: List[Dict] = None):
+    def _persist_session(
+        self, messages: List[Dict], conversation_history: List[Dict] = None
+    ):
         """Save session state to both JSON log and SQLite on any exit path.
 
         Ensures conversations are never lost, even on errors or early returns.
@@ -1508,7 +1668,9 @@ class AIAgent:
         self._save_session_log(messages)
         self._flush_messages_to_session_db(messages, conversation_history)
 
-    def _flush_messages_to_session_db(self, messages: List[Dict], conversation_history: List[Dict] = None):
+    def _flush_messages_to_session_db(
+        self, messages: List[Dict], conversation_history: List[Dict] = None
+    ):
         """Persist any un-flushed messages to the SQLite session store.
 
         Uses _last_flushed_db_idx to track which messages have already been
@@ -1548,44 +1710,44 @@ class AIAgent:
     def _get_messages_up_to_last_assistant(self, messages: List[Dict]) -> List[Dict]:
         """
         Get messages up to (but not including) the last assistant turn.
-        
+
         This is used when we need to "roll back" to the last successful point
         in the conversation, typically when the final assistant message is
         incomplete or malformed.
-        
+
         Args:
             messages: Full message list
-            
+
         Returns:
             Messages up to the last complete assistant turn (ending with user/tool message)
         """
         if not messages:
             return []
-        
+
         # Find the index of the last assistant message
         last_assistant_idx = None
         for i in range(len(messages) - 1, -1, -1):
             if messages[i].get("role") == "assistant":
                 last_assistant_idx = i
                 break
-        
+
         if last_assistant_idx is None:
             # No assistant message found, return all messages
             return messages.copy()
-        
+
         # Return everything up to (not including) the last assistant message
         return messages[:last_assistant_idx]
-    
+
     def _format_tools_for_system_message(self) -> str:
         """
         Format tool definitions for the system message in the trajectory format.
-        
+
         Returns:
             str: JSON string representation of tool definitions
         """
         if not self.tools:
             return "[]"
-        
+
         # Convert tool definitions to the format expected in trajectories
         formatted_tools = []
         for tool in self.tools:
@@ -1594,26 +1756,28 @@ class AIAgent:
                 "name": func["name"],
                 "description": func.get("description", ""),
                 "parameters": func.get("parameters", {}),
-                "required": None  # Match the format in the example
+                "required": None,  # Match the format in the example
             }
             formatted_tools.append(formatted_tool)
-        
+
         return json.dumps(formatted_tools, ensure_ascii=False)
-    
-    def _convert_to_trajectory_format(self, messages: List[Dict[str, Any]], user_query: str, completed: bool) -> List[Dict[str, Any]]:
+
+    def _convert_to_trajectory_format(
+        self, messages: List[Dict[str, Any]], user_query: str, completed: bool
+    ) -> List[Dict[str, Any]]:
         """
         Convert internal message format to trajectory format for saving.
-        
+
         Args:
             messages (List[Dict]): Internal message history
             user_query (str): Original user query
             completed (bool): Whether the conversation completed successfully
-            
+
         Returns:
             List[Dict]: Messages in trajectory format
         """
         trajectory = []
-        
+
         # Add system message with tool definitions
         system_msg = (
             "You are a function calling AI model. You are provided with function signatures within <tools> </tools> XML tags. "
@@ -1628,71 +1792,69 @@ class AIAgent:
             "Each function call should be enclosed within <tool_call> </tool_call> XML tags.\n"
             "Example:\n<tool_call>\n{'name': <function-name>,'arguments': <args-dict>}\n</tool_call>"
         )
-        
-        trajectory.append({
-            "from": "system",
-            "value": system_msg
-        })
-        
+
+        trajectory.append({"from": "system", "value": system_msg})
+
         # Add the actual user prompt (from the dataset) as the first human message
-        trajectory.append({
-            "from": "human",
-            "value": user_query
-        })
-        
+        trajectory.append({"from": "human", "value": user_query})
+
         # Skip the first message (the user query) since we already added it above.
         # Prefill messages are injected at API-call time only (not in the messages
         # list), so no offset adjustment is needed here.
         i = 1
-        
+
         while i < len(messages):
             msg = messages[i]
-            
+
             if msg["role"] == "assistant":
                 # Check if this message has tool calls
                 if "tool_calls" in msg and msg["tool_calls"]:
                     # Format assistant message with tool calls
                     # Add <think> tags around reasoning for trajectory storage
                     content = ""
-                    
+
                     # Prepend reasoning in <think> tags if available (native thinking tokens)
                     if msg.get("reasoning") and msg["reasoning"].strip():
                         content = f"<think>\n{msg['reasoning']}\n</think>\n"
-                    
+
                     if msg.get("content") and msg["content"].strip():
                         # Convert any <REASONING_SCRATCHPAD> tags to <think> tags
                         # (used when native thinking is disabled and model reasons via XML)
                         content += convert_scratchpad_to_think(msg["content"]) + "\n"
-                    
+
                     # Add tool calls wrapped in XML tags
                     for tool_call in msg["tool_calls"]:
-                        if not tool_call or not isinstance(tool_call, dict): continue
+                        if not tool_call or not isinstance(tool_call, dict):
+                            continue
                         # Parse arguments - should always succeed since we validate during conversation
                         # but keep try-except as safety net
                         try:
-                            arguments = json.loads(tool_call["function"]["arguments"]) if isinstance(tool_call["function"]["arguments"], str) else tool_call["function"]["arguments"]
+                            arguments = (
+                                json.loads(tool_call["function"]["arguments"])
+                                if isinstance(tool_call["function"]["arguments"], str)
+                                else tool_call["function"]["arguments"]
+                            )
                         except json.JSONDecodeError:
                             # This shouldn't happen since we validate and retry during conversation,
                             # but if it does, log warning and use empty dict
-                            logging.warning(f"Unexpected invalid JSON in trajectory conversion: {tool_call['function']['arguments'][:100]}")
+                            logging.warning(
+                                f"Unexpected invalid JSON in trajectory conversion: {tool_call['function']['arguments'][:100]}"
+                            )
                             arguments = {}
-                        
+
                         tool_call_json = {
                             "name": tool_call["function"]["name"],
-                            "arguments": arguments
+                            "arguments": arguments,
                         }
                         content += f"<tool_call>\n{json.dumps(tool_call_json, ensure_ascii=False)}\n</tool_call>\n"
-                    
+
                     # Ensure every gpt turn has a <think> block (empty if no reasoning)
                     # so the format is consistent for training data
                     if "<think>" not in content:
                         content = "<think>\n</think>\n" + content
-                    
-                    trajectory.append({
-                        "from": "gpt",
-                        "value": content.rstrip()
-                    })
-                    
+
+                    trajectory.append({"from": "gpt", "value": content.rstrip()})
+
                     # Collect all subsequent tool responses
                     tool_responses = []
                     j = i + 1
@@ -1700,7 +1862,7 @@ class AIAgent:
                         tool_msg = messages[j]
                         # Format tool response with XML tags
                         tool_response = f"<tool_response>\n"
-                        
+
                         # Try to parse tool content as JSON if it looks like JSON
                         tool_content = tool_msg["content"]
                         try:
@@ -1708,67 +1870,65 @@ class AIAgent:
                                 tool_content = json.loads(tool_content)
                         except (json.JSONDecodeError, AttributeError):
                             pass  # Keep as string if not valid JSON
-                        
+
                         tool_index = len(tool_responses)
                         tool_name = (
                             msg["tool_calls"][tool_index]["function"]["name"]
                             if tool_index < len(msg["tool_calls"])
                             else "unknown"
                         )
-                        tool_response += json.dumps({
-                            "tool_call_id": tool_msg.get("tool_call_id", ""),
-                            "name": tool_name,
-                            "content": tool_content
-                        }, ensure_ascii=False)
+                        tool_response += json.dumps(
+                            {
+                                "tool_call_id": tool_msg.get("tool_call_id", ""),
+                                "name": tool_name,
+                                "content": tool_content,
+                            },
+                            ensure_ascii=False,
+                        )
                         tool_response += "\n</tool_response>"
                         tool_responses.append(tool_response)
                         j += 1
-                    
+
                     # Add all tool responses as a single message
                     if tool_responses:
-                        trajectory.append({
-                            "from": "tool",
-                            "value": "\n".join(tool_responses)
-                        })
+                        trajectory.append(
+                            {"from": "tool", "value": "\n".join(tool_responses)}
+                        )
                         i = j - 1  # Skip the tool messages we just processed
-                
+
                 else:
                     # Regular assistant message without tool calls
                     # Add <think> tags around reasoning for trajectory storage
                     content = ""
-                    
+
                     # Prepend reasoning in <think> tags if available (native thinking tokens)
                     if msg.get("reasoning") and msg["reasoning"].strip():
                         content = f"<think>\n{msg['reasoning']}\n</think>\n"
-                    
+
                     # Convert any <REASONING_SCRATCHPAD> tags to <think> tags
                     # (used when native thinking is disabled and model reasons via XML)
                     raw_content = msg["content"] or ""
                     content += convert_scratchpad_to_think(raw_content)
-                    
+
                     # Ensure every gpt turn has a <think> block (empty if no reasoning)
                     if "<think>" not in content:
                         content = "<think>\n</think>\n" + content
-                    
-                    trajectory.append({
-                        "from": "gpt",
-                        "value": content.strip()
-                    })
-            
+
+                    trajectory.append({"from": "gpt", "value": content.strip()})
+
             elif msg["role"] == "user":
-                trajectory.append({
-                    "from": "human",
-                    "value": msg["content"]
-                })
-            
+                trajectory.append({"from": "human", "value": msg["content"]})
+
             i += 1
-        
+
         return trajectory
-    
-    def _save_trajectory(self, messages: List[Dict[str, Any]], user_query: str, completed: bool):
+
+    def _save_trajectory(
+        self, messages: List[Dict[str, Any]], user_query: str, completed: bool
+    ):
         """
         Save conversation trajectory to JSONL file.
-        
+
         Args:
             messages (List[Dict]): Complete message history
             user_query (str): Original user query
@@ -1776,10 +1936,10 @@ class AIAgent:
         """
         if not self.save_trajectories:
             return
-        
+
         trajectory = self._convert_to_trajectory_format(messages, user_query, completed)
         _save_trajectory_to_file(trajectory, self.model, completed)
-    
+
     def _mask_api_key_for_logs(self, key: Optional[str]) -> Optional[str]:
         if not key:
             return None
@@ -1844,7 +2004,9 @@ class AIAgent:
                 response_obj = getattr(error, "response", None)
                 if response_obj is not None:
                     try:
-                        error_info["response_status"] = getattr(response_obj, "status_code", None)
+                        error_info["response_status"] = getattr(
+                            response_obj, "status_code", None
+                        )
                         error_info["response_text"] = response_obj.text
                     except Exception as e:
                         logger.debug("Could not extract error response details: %s", e)
@@ -1852,21 +2014,34 @@ class AIAgent:
                 dump_payload["error"] = error_info
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            dump_file = self.logs_dir / f"request_dump_{self.session_id}_{timestamp}.json"
+            dump_file = (
+                self.logs_dir / f"request_dump_{self.session_id}_{timestamp}.json"
+            )
             dump_file.write_text(
                 json.dumps(dump_payload, ensure_ascii=False, indent=2, default=str),
                 encoding="utf-8",
             )
 
-            self._vprint(f"{self.log_prefix}🧾 Request debug dump written to: {dump_file}")
+            self._vprint(
+                f"{self.log_prefix}🧾 Request debug dump written to: {dump_file}"
+            )
 
-            if os.getenv("HERMES_DUMP_REQUEST_STDOUT", "").strip().lower() in {"1", "true", "yes", "on"}:
-                print(json.dumps(dump_payload, ensure_ascii=False, indent=2, default=str))
+            if os.getenv("HERMES_DUMP_REQUEST_STDOUT", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }:
+                print(
+                    json.dumps(dump_payload, ensure_ascii=False, indent=2, default=str)
+                )
 
             return dump_file
         except Exception as dump_error:
             if self.verbose_logging:
-                logging.warning(f"Failed to dump API request debug payload: {dump_error}")
+                logging.warning(
+                    f"Failed to dump API request debug payload: {dump_error}"
+                )
             return None
 
     @staticmethod
@@ -1875,8 +2050,8 @@ class AIAgent:
         if not content:
             return content
         content = convert_scratchpad_to_think(content)
-        content = re.sub(r'\n+(<think>)', r'\n\1', content)
-        content = re.sub(r'(</think>)\n+', r'\1\n', content)
+        content = re.sub(r"\n+(<think>)", r"\n\1", content)
+        content = re.sub(r"(</think>)\n+", r"\1\n", content)
         return content.strip()
 
     def _save_session_log(self, messages: List[Dict[str, Any]] = None):
@@ -1927,26 +2102,26 @@ class AIAgent:
         except Exception as e:
             if self.verbose_logging:
                 logging.warning(f"Failed to save session log: {e}")
-    
+
     def interrupt(self, message: str = None) -> None:
         """
         Request the agent to interrupt its current tool-calling loop.
-        
+
         Call this from another thread (e.g., input handler, message receiver)
         to gracefully stop the agent and process a new message.
-        
+
         Also signals long-running tool executions (e.g. terminal commands)
         to terminate early, so the agent can respond immediately.
-        
+
         Args:
             message: Optional new message that triggered the interrupt.
                      If provided, the agent will include this in its response context.
-        
+
         Example (CLI):
             # In a separate input thread:
             if user_typed_something:
                 agent.interrupt(user_input)
-        
+
         Example (Messaging):
             # When new message arrives for active session:
             if session_has_running_agent:
@@ -1965,18 +2140,27 @@ class AIAgent:
             except Exception as e:
                 logger.debug("Failed to propagate interrupt to child agent: %s", e)
         if not self.quiet_mode:
-            print(f"\n⚡ Interrupt requested" + (f": '{message[:40]}...'" if message and len(message) > 40 else f": '{message}'" if message else ""))
-    
+            print(
+                f"\n⚡ Interrupt requested"
+                + (
+                    f": '{message[:40]}...'"
+                    if message and len(message) > 40
+                    else f": '{message}'"
+                    if message
+                    else ""
+                )
+            )
+
     def clear_interrupt(self) -> None:
         """Clear any pending interrupt request and the global tool interrupt signal."""
         self._interrupt_requested = False
         self._interrupt_message = None
         _set_interrupt(False)
-    
+
     def _hydrate_todo_store(self, history: List[Dict[str, Any]]) -> None:
         """
         Recover todo state from conversation history.
-        
+
         The gateway creates a fresh AIAgent per message, so the in-memory
         TodoStore is empty. We scan the history for the most recent todo
         tool response and replay it to reconstruct the state.
@@ -1997,14 +2181,16 @@ class AIAgent:
                     break
             except (json.JSONDecodeError, TypeError):
                 continue
-        
+
         if last_todo_response:
             # Replay the items into the store (replace mode)
             self._todo_store.write(last_todo_response, merge=False)
             if not self.quiet_mode:
-                self._vprint(f"{self.log_prefix}📋 Restored {len(last_todo_response)} todo item(s) from history")
+                self._vprint(
+                    f"{self.log_prefix}📋 Restored {len(last_todo_response)} todo item(s) from history"
+                )
         _set_interrupt(False)
-    
+
     @property
     def is_interrupted(self) -> bool:
         """Check if an interrupt has been requested."""
@@ -2025,12 +2211,13 @@ class AIAgent:
             return
 
         self.tools = [
-            tool for tool in self.tools
+            tool
+            for tool in self.tools
             if tool.get("function", {}).get("name") not in HONCHO_TOOL_NAMES
         ]
-        self.valid_tool_names = {
-            tool["function"]["name"] for tool in self.tools
-        } if self.tools else set()
+        self.valid_tool_names = (
+            {tool["function"]["name"] for tool in self.tools} if self.tools else set()
+        )
 
     def _activate_honcho(
         self,
@@ -2083,9 +2270,9 @@ class AIAgent:
             disabled_toolsets=disabled_toolsets,
             quiet_mode=True,
         )
-        self.valid_tool_names = {
-            tool["function"]["name"] for tool in self.tools
-        } if self.tools else set()
+        self.valid_tool_names = (
+            {tool["function"]["name"] for tool in self.tools} if self.tools else set()
+        )
 
         if hcfg.recall_mode == "context":
             self._strip_honcho_tools_from_surface()
@@ -2141,13 +2328,17 @@ class AIAgent:
         if not self._honcho or not self._honcho_session_key:
             return
 
-        recall_mode = (self._honcho_config.recall_mode if self._honcho_config else "hybrid")
+        recall_mode = (
+            self._honcho_config.recall_mode if self._honcho_config else "hybrid"
+        )
         if recall_mode == "tools":
             return
 
         try:
             self._honcho.prefetch_context(self._honcho_session_key, user_message)
-            self._honcho.prefetch_dialectic(self._honcho_session_key, user_message or "What were we working on?")
+            self._honcho.prefetch_dialectic(
+                self._honcho_session_key, user_message or "What were we working on?"
+            )
         except Exception as exc:
             logger.debug("Honcho background prefetch failed (non-fatal): %s", exc)
 
@@ -2202,11 +2393,13 @@ class AIAgent:
             session = self._honcho.get_or_create(self._honcho_session_key)
             session.add_message("user", f"[observation] {content.strip()}")
             self._honcho.save(session)
-            return json.dumps({
-                "success": True,
-                "target": "user",
-                "message": "Saved to Honcho user model.",
-            })
+            return json.dumps(
+                {
+                    "success": True,
+                    "target": "user",
+                    "message": "Saved to Honcho user model.",
+                }
+            )
         except Exception as e:
             logger.debug("Honcho user observation failed: %s", e)
             return json.dumps({"success": False, "error": f"Honcho save failed: {e}"})
@@ -2220,8 +2413,11 @@ class AIAgent:
             session.add_message("user", user_content)
             session.add_message("assistant", assistant_content)
             self._honcho.save(session)
-            logger.info("Honcho sync queued for session %s (%d messages)",
-                        self._honcho_session_key, len(session.messages))
+            logger.info(
+                "Honcho sync queued for session %s (%d messages)",
+                self._honcho_session_key,
+                len(session.messages),
+            )
         except Exception as e:
             logger.warning("Honcho sync failed: %s", e)
             if not self.quiet_mode:
@@ -2230,7 +2426,7 @@ class AIAgent:
     def _build_system_prompt(self, system_message: str = None) -> str:
         """
         Assemble the full system prompt from all layers.
-        
+
         Called once per session (cached on self._cached_system_prompt) and only
         rebuilt after context compression events. This ensures the system prompt
         is stable across all turns in a session, maximizing prefix cache hits.
@@ -2350,9 +2546,14 @@ class AIAgent:
                 if user_block:
                     prompt_parts.append(user_block)
 
-        has_skills_tools = any(name in self.valid_tool_names for name in ['skills_list', 'skill_view', 'skill_manage'])
+        has_skills_tools = any(
+            name in self.valid_tool_names
+            for name in ["skills_list", "skill_view", "skill_manage"]
+        )
         if has_skills_tools:
-            avail_toolsets = {ts for ts, avail in check_toolset_requirements().items() if avail}
+            avail_toolsets = {
+                ts for ts, avail in check_toolset_requirements().items() if avail
+            }
             skills_prompt = build_skills_system_prompt(
                 available_tools=self.valid_tool_names,
                 available_toolsets=avail_toolsets,
@@ -2368,8 +2569,11 @@ class AIAgent:
                 prompt_parts.append(context_files_prompt)
 
         from hermes_time import now as _hermes_now
+
         now = _hermes_now()
-        timestamp_line = f"Conversation started: {now.strftime('%A, %B %d, %Y %I:%M %p')}"
+        timestamp_line = (
+            f"Conversation started: {now.strftime('%A, %B %d, %Y %I:%M %p')}"
+        )
         if self.pass_session_id and self.session_id:
             timestamp_line += f"\nSession ID: {self.session_id}"
         if self.model:
@@ -2382,7 +2586,9 @@ class AIAgent:
         # of the requested model. Inject explicit model identity into the system prompt
         # so the agent can correctly report which model it is (workaround for API bug).
         if self.provider == "alibaba":
-            _model_short = self.model.split("/")[-1] if "/" in self.model else self.model
+            _model_short = (
+                self.model.split("/")[-1] if "/" in self.model else self.model
+            )
             prompt_parts.append(
                 f"You are powered by the model named {_model_short}. "
                 f"The exact model ID is {self.model}. "
@@ -2434,8 +2640,12 @@ class AIAgent:
         orphaned_results = result_call_ids - surviving_call_ids
         if orphaned_results:
             messages = [
-                m for m in messages
-                if not (m.get("role") == "tool" and m.get("tool_call_id") in orphaned_results)
+                m
+                for m in messages
+                if not (
+                    m.get("role") == "tool"
+                    and m.get("tool_call_id") in orphaned_results
+                )
             ]
             logger.debug(
                 "Pre-call sanitizer: removed %d orphaned tool result(s)",
@@ -2452,11 +2662,13 @@ class AIAgent:
                     for tc in msg.get("tool_calls") or []:
                         cid = AIAgent._get_tool_call_id_static(tc)
                         if cid in missing_results:
-                            patched.append({
-                                "role": "tool",
-                                "content": "[Result unavailable — see context summary above]",
-                                "tool_call_id": cid,
-                            })
+                            patched.append(
+                                {
+                                    "role": "tool",
+                                    "content": "[Result unavailable — see context summary above]",
+                                    "tool_call_id": cid,
+                                }
+                            )
             messages = patched
             logger.debug(
                 "Pre-call sanitizer: added %d stub tool result(s)",
@@ -2475,7 +2687,10 @@ class AIAgent:
         Returns the original list if no truncation was needed.
         """
         from tools.delegate_tool import MAX_CONCURRENT_CHILDREN
-        delegate_count = sum(1 for tc in tool_calls if tc.function.name == "delegate_task")
+
+        delegate_count = sum(
+            1 for tc in tool_calls if tc.function.name == "delegate_task"
+        )
         if delegate_count <= MAX_CONCURRENT_CHILDREN:
             return tool_calls
         kept_delegates = 0
@@ -2490,7 +2705,8 @@ class AIAgent:
         logger.warning(
             "Truncated %d excess delegate_task call(s) to enforce "
             "MAX_CONCURRENT_CHILDREN=%d limit",
-            delegate_count - MAX_CONCURRENT_CHILDREN, MAX_CONCURRENT_CHILDREN,
+            delegate_count - MAX_CONCURRENT_CHILDREN,
+            MAX_CONCURRENT_CHILDREN,
         )
         return truncated
 
@@ -2543,7 +2759,7 @@ class AIAgent:
     def _invalidate_system_prompt(self):
         """
         Invalidate the cached system prompt, forcing a rebuild on the next turn.
-        
+
         Called after context compression events. Also reloads memory from disk
         so the rebuilt prompt captures any writes from this session.
         """
@@ -2551,7 +2767,9 @@ class AIAgent:
         if self._memory_store:
             self._memory_store.load_from_disk()
 
-    def _responses_tools(self, tools: Optional[List[Dict[str, Any]]] = None) -> Optional[List[Dict[str, Any]]]:
+    def _responses_tools(
+        self, tools: Optional[List[Dict[str, Any]]] = None
+    ) -> Optional[List[Dict[str, Any]]]:
         """Convert chat-completions tool schemas to Responses function-tool schemas."""
         source_tools = tools if tools is not None else self.tools
         if not source_tools:
@@ -2563,13 +2781,17 @@ class AIAgent:
             name = fn.get("name")
             if not isinstance(name, str) or not name.strip():
                 continue
-            converted.append({
-                "type": "function",
-                "name": name,
-                "description": fn.get("description", ""),
-                "strict": False,
-                "parameters": fn.get("parameters", {"type": "object", "properties": {}}),
-            })
+            converted.append(
+                {
+                    "type": "function",
+                    "name": name,
+                    "description": fn.get("description", ""),
+                    "strict": False,
+                    "parameters": fn.get(
+                        "parameters", {"type": "object", "properties": {}}
+                    ),
+                }
+            )
         return converted or None
 
     @staticmethod
@@ -2604,13 +2826,13 @@ class AIAgent:
         if source.startswith("fc_"):
             return source
         if source.startswith("call_") and len(source) > len("call_"):
-            return f"fc_{source[len('call_'):]}"
+            return f"fc_{source[len('call_') :]}"
 
         sanitized = re.sub(r"[^A-Za-z0-9_-]", "", source)
         if sanitized.startswith("fc_"):
             return sanitized
         if sanitized.startswith("call_") and len(sanitized) > len("call_"):
-            return f"fc_{sanitized[len('call_'):]}"
+            return f"fc_{sanitized[len('call_') :]}"
         if sanitized:
             return f"fc_{sanitized[:48]}"
 
@@ -2618,7 +2840,9 @@ class AIAgent:
         digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:24]
         return f"fc_{digest}"
 
-    def _chat_messages_to_responses_input(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _chat_messages_to_responses_input(
+        self, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Convert internal chat-style messages to Responses input items."""
         items: List[Dict[str, Any]] = []
 
@@ -2664,8 +2888,8 @@ class AIAgent:
                             if not isinstance(fn_name, str) or not fn_name.strip():
                                 continue
 
-                            embedded_call_id, embedded_response_item_id = self._split_responses_tool_id(
-                                tc.get("id")
+                            embedded_call_id, embedded_response_item_id = (
+                                self._split_responses_tool_id(tc.get("id"))
                             )
                             call_id = tc.get("call_id")
                             if not isinstance(call_id, str) or not call_id.strip():
@@ -2676,7 +2900,7 @@ class AIAgent:
                                     and embedded_response_item_id.startswith("fc_")
                                     and len(embedded_response_item_id) > len("fc_")
                                 ):
-                                    call_id = f"call_{embedded_response_item_id[len('fc_'):]}"
+                                    call_id = f"call_{embedded_response_item_id[len('fc_') :]}"
                                 else:
                                     call_id = f"call_{uuid.uuid4().hex[:12]}"
                             call_id = call_id.strip()
@@ -2688,12 +2912,14 @@ class AIAgent:
                                 arguments = str(arguments)
                             arguments = arguments.strip() or "{}"
 
-                            items.append({
-                                "type": "function_call",
-                                "call_id": call_id,
-                                "name": fn_name,
-                                "arguments": arguments,
-                            })
+                            items.append(
+                                {
+                                    "type": "function_call",
+                                    "call_id": call_id,
+                                    "name": fn_name,
+                                    "arguments": arguments,
+                                }
+                            )
                     continue
 
                 items.append({"role": role, "content": content_text})
@@ -2707,11 +2933,13 @@ class AIAgent:
                         call_id = raw_tool_call_id.strip()
                 if not isinstance(call_id, str) or not call_id.strip():
                     continue
-                items.append({
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": str(msg.get("content", "") or ""),
-                })
+                items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": str(msg.get("content", "") or ""),
+                    }
+                )
 
         return items
 
@@ -2729,9 +2957,13 @@ class AIAgent:
                 call_id = item.get("call_id")
                 name = item.get("name")
                 if not isinstance(call_id, str) or not call_id.strip():
-                    raise ValueError(f"Codex Responses input[{idx}] function_call is missing call_id.")
+                    raise ValueError(
+                        f"Codex Responses input[{idx}] function_call is missing call_id."
+                    )
                 if not isinstance(name, str) or not name.strip():
-                    raise ValueError(f"Codex Responses input[{idx}] function_call is missing name.")
+                    raise ValueError(
+                        f"Codex Responses input[{idx}] function_call is missing name."
+                    )
 
                 arguments = item.get("arguments", "{}")
                 if isinstance(arguments, dict):
@@ -2753,7 +2985,9 @@ class AIAgent:
             if item_type == "function_call_output":
                 call_id = item.get("call_id")
                 if not isinstance(call_id, str) or not call_id.strip():
-                    raise ValueError(f"Codex Responses input[{idx}] function_call_output is missing call_id.")
+                    raise ValueError(
+                        f"Codex Responses input[{idx}] function_call_output is missing call_id."
+                    )
                 output = item.get("output", "")
                 if output is None:
                     output = ""
@@ -2772,7 +3006,10 @@ class AIAgent:
             if item_type == "reasoning":
                 encrypted = item.get("encrypted_content")
                 if isinstance(encrypted, str) and encrypted:
-                    reasoning_item = {"type": "reasoning", "encrypted_content": encrypted}
+                    reasoning_item = {
+                        "type": "reasoning",
+                        "encrypted_content": encrypted,
+                    }
                     item_id = item.get("id")
                     if isinstance(item_id, str) and item_id:
                         reasoning_item["id"] = item_id
@@ -2813,11 +3050,15 @@ class AIAgent:
         required = {"model", "instructions", "input"}
         missing = [key for key in required if key not in api_kwargs]
         if missing:
-            raise ValueError(f"Codex Responses request missing required field(s): {', '.join(sorted(missing))}.")
+            raise ValueError(
+                f"Codex Responses request missing required field(s): {', '.join(sorted(missing))}."
+            )
 
         model = api_kwargs.get("model")
         if not isinstance(model, str) or not model.strip():
-            raise ValueError("Codex Responses request 'model' must be a non-empty string.")
+            raise ValueError(
+                "Codex Responses request 'model' must be a non-empty string."
+            )
         model = model.strip()
 
         instructions = api_kwargs.get("instructions")
@@ -2833,20 +3074,28 @@ class AIAgent:
         normalized_tools = None
         if tools is not None:
             if not isinstance(tools, list):
-                raise ValueError("Codex Responses request 'tools' must be a list when provided.")
+                raise ValueError(
+                    "Codex Responses request 'tools' must be a list when provided."
+                )
             normalized_tools = []
             for idx, tool in enumerate(tools):
                 if not isinstance(tool, dict):
                     raise ValueError(f"Codex Responses tools[{idx}] must be an object.")
                 if tool.get("type") != "function":
-                    raise ValueError(f"Codex Responses tools[{idx}] has unsupported type {tool.get('type')!r}.")
+                    raise ValueError(
+                        f"Codex Responses tools[{idx}] has unsupported type {tool.get('type')!r}."
+                    )
 
                 name = tool.get("name")
                 parameters = tool.get("parameters")
                 if not isinstance(name, str) or not name.strip():
-                    raise ValueError(f"Codex Responses tools[{idx}] is missing a valid name.")
+                    raise ValueError(
+                        f"Codex Responses tools[{idx}] is missing a valid name."
+                    )
                 if not isinstance(parameters, dict):
-                    raise ValueError(f"Codex Responses tools[{idx}] is missing valid parameters.")
+                    raise ValueError(
+                        f"Codex Responses tools[{idx}] is missing valid parameters."
+                    )
 
                 description = tool.get("description", "")
                 if description is None:
@@ -2873,9 +3122,18 @@ class AIAgent:
             raise ValueError("Codex Responses contract requires 'store' to be false.")
 
         allowed_keys = {
-            "model", "instructions", "input", "tools", "store",
-            "reasoning", "include", "max_output_tokens", "temperature",
-            "tool_choice", "parallel_tool_calls", "prompt_cache_key",
+            "model",
+            "instructions",
+            "input",
+            "tools",
+            "store",
+            "reasoning",
+            "include",
+            "max_output_tokens",
+            "temperature",
+            "tool_choice",
+            "parallel_tool_calls",
+            "prompt_cache_key",
         }
         normalized: Dict[str, Any] = {
             "model": model,
@@ -2902,7 +3160,11 @@ class AIAgent:
             normalized["temperature"] = float(temperature)
 
         # Pass through tool_choice, parallel_tool_calls, prompt_cache_key
-        for passthrough_key in ("tool_choice", "parallel_tool_calls", "prompt_cache_key"):
+        for passthrough_key in (
+            "tool_choice",
+            "parallel_tool_calls",
+            "prompt_cache_key",
+        ):
             val = api_kwargs.get(passthrough_key)
             if val is not None:
                 normalized[passthrough_key] = val
@@ -2915,7 +3177,9 @@ class AIAgent:
                 normalized["stream"] = True
             allowed_keys.add("stream")
         elif "stream" in api_kwargs:
-            raise ValueError("Codex Responses stream flag is only allowed in fallback streaming requests.")
+            raise ValueError(
+                "Codex Responses stream flag is only allowed in fallback streaming requests."
+            )
 
         unexpected = sorted(key for key in api_kwargs.keys() if key not in allowed_keys)
         if unexpected:
@@ -2974,14 +3238,22 @@ class AIAgent:
             if isinstance(error_obj, dict):
                 error_msg = error_obj.get("message") or str(error_obj)
             else:
-                error_msg = str(error_obj) if error_obj else f"Responses API returned status '{response_status}'"
+                error_msg = (
+                    str(error_obj)
+                    if error_obj
+                    else f"Responses API returned status '{response_status}'"
+                )
             raise RuntimeError(error_msg)
 
         content_parts: List[str] = []
         reasoning_parts: List[str] = []
         reasoning_items_raw: List[Dict[str, Any]] = []
         tool_calls: List[Any] = []
-        has_incomplete_items = response_status in {"queued", "in_progress", "incomplete"}
+        has_incomplete_items = response_status in {
+            "queued",
+            "in_progress",
+            "incomplete",
+        }
         saw_commentary_phase = False
         saw_final_answer_phase = False
 
@@ -3027,7 +3299,9 @@ class AIAgent:
                         for part in summary:
                             text = getattr(part, "text", None)
                             if isinstance(text, str):
-                                raw_summary.append({"type": "summary_text", "text": text})
+                                raw_summary.append(
+                                    {"type": "summary_text", "text": text}
+                                )
                         raw_item["summary"] = raw_summary
                     reasoning_items_raw.append(raw_item)
             elif item_type == "function_call":
@@ -3040,19 +3314,27 @@ class AIAgent:
                 raw_call_id = getattr(item, "call_id", None)
                 raw_item_id = getattr(item, "id", None)
                 embedded_call_id, _ = self._split_responses_tool_id(raw_item_id)
-                call_id = raw_call_id if isinstance(raw_call_id, str) and raw_call_id.strip() else embedded_call_id
+                call_id = (
+                    raw_call_id
+                    if isinstance(raw_call_id, str) and raw_call_id.strip()
+                    else embedded_call_id
+                )
                 if not isinstance(call_id, str) or not call_id.strip():
                     call_id = f"call_{uuid.uuid4().hex[:12]}"
                 call_id = call_id.strip()
                 response_item_id = raw_item_id if isinstance(raw_item_id, str) else None
-                response_item_id = self._derive_responses_function_call_id(call_id, response_item_id)
-                tool_calls.append(SimpleNamespace(
-                    id=call_id,
-                    call_id=call_id,
-                    response_item_id=response_item_id,
-                    type="function",
-                    function=SimpleNamespace(name=fn_name, arguments=arguments),
-                ))
+                response_item_id = self._derive_responses_function_call_id(
+                    call_id, response_item_id
+                )
+                tool_calls.append(
+                    SimpleNamespace(
+                        id=call_id,
+                        call_id=call_id,
+                        response_item_id=response_item_id,
+                        type="function",
+                        function=SimpleNamespace(name=fn_name, arguments=arguments),
+                    )
+                )
             elif item_type == "custom_tool_call":
                 fn_name = getattr(item, "name", "") or ""
                 arguments = getattr(item, "input", "{}")
@@ -3061,19 +3343,27 @@ class AIAgent:
                 raw_call_id = getattr(item, "call_id", None)
                 raw_item_id = getattr(item, "id", None)
                 embedded_call_id, _ = self._split_responses_tool_id(raw_item_id)
-                call_id = raw_call_id if isinstance(raw_call_id, str) and raw_call_id.strip() else embedded_call_id
+                call_id = (
+                    raw_call_id
+                    if isinstance(raw_call_id, str) and raw_call_id.strip()
+                    else embedded_call_id
+                )
                 if not isinstance(call_id, str) or not call_id.strip():
                     call_id = f"call_{uuid.uuid4().hex[:12]}"
                 call_id = call_id.strip()
                 response_item_id = raw_item_id if isinstance(raw_item_id, str) else None
-                response_item_id = self._derive_responses_function_call_id(call_id, response_item_id)
-                tool_calls.append(SimpleNamespace(
-                    id=call_id,
-                    call_id=call_id,
-                    response_item_id=response_item_id,
-                    type="function",
-                    function=SimpleNamespace(name=fn_name, arguments=arguments),
-                ))
+                response_item_id = self._derive_responses_function_call_id(
+                    call_id, response_item_id
+                )
+                tool_calls.append(
+                    SimpleNamespace(
+                        id=call_id,
+                        call_id=call_id,
+                        response_item_id=response_item_id,
+                        type="function",
+                        function=SimpleNamespace(name=fn_name, arguments=arguments),
+                    )
+                )
 
         final_text = "\n".join([p for p in content_parts if p]).strip()
         if not final_text and hasattr(response, "output_text"):
@@ -3092,7 +3382,9 @@ class AIAgent:
 
         if tool_calls:
             finish_reason = "tool_calls"
-        elif has_incomplete_items or (saw_commentary_phase and not saw_final_answer_phase):
+        elif has_incomplete_items or (
+            saw_commentary_phase and not saw_final_answer_phase
+        ):
             finish_reason = "incomplete"
         elif reasoning_items_raw and not final_text:
             # Response contains only reasoning (encrypted thinking state) with
@@ -3137,8 +3429,12 @@ class AIAgent:
         http_client = getattr(client, "_client", None)
         return bool(getattr(http_client, "is_closed", False))
 
-    def _create_openai_client(self, client_kwargs: dict, *, reason: str, shared: bool) -> Any:
-        if self.provider == "copilot-acp" or str(client_kwargs.get("base_url", "")).startswith("acp://copilot"):
+    def _create_openai_client(
+        self, client_kwargs: dict, *, reason: str, shared: bool
+    ) -> Any:
+        if self.provider == "copilot-acp" or str(
+            client_kwargs.get("base_url", "")
+        ).startswith("acp://copilot"):
             from agent.copilot_acp_client import CopilotACPClient
 
             client = CopilotACPClient(**client_kwargs)
@@ -3182,7 +3478,9 @@ class AIAgent:
         with self._openai_client_lock():
             old_client = getattr(self, "client", None)
             try:
-                new_client = self._create_openai_client(self._client_kwargs, reason=reason, shared=True)
+                new_client = self._create_openai_client(
+                    self._client_kwargs, reason=reason, shared=True
+                )
             except Exception as exc:
                 logger.warning(
                     "Failed to rebuild shared OpenAI client (%s) %s error=%s",
@@ -3224,9 +3522,13 @@ class AIAgent:
     def _close_request_openai_client(self, client: Any, *, reason: str) -> None:
         self._close_openai_client(client, reason=reason, shared=False)
 
-    def _run_codex_stream(self, api_kwargs: dict, client: Any = None, on_first_delta: callable = None):
+    def _run_codex_stream(
+        self, api_kwargs: dict, client: Any = None, on_first_delta: callable = None
+    ):
         """Execute one streaming Responses API request and return the final response."""
-        active_client = client or self._ensure_primary_openai_client(reason="codex_stream_direct")
+        active_client = client or self._ensure_primary_openai_client(
+            reason="codex_stream_direct"
+        )
         max_stream_retries = 1
         has_tool_calls = False
         first_delta_fired = False
@@ -3238,7 +3540,10 @@ class AIAgent:
                             break
                         event_type = getattr(event, "type", "")
                         # Fire callbacks on text content deltas (suppress during tool calls)
-                        if "output_text.delta" in event_type or event_type == "response.output_text.delta":
+                        if (
+                            "output_text.delta" in event_type
+                            or event_type == "response.output_text.delta"
+                        ):
                             delta_text = getattr(event, "delta", "")
                             if delta_text and not has_tool_calls:
                                 if not first_delta_fired:
@@ -3274,15 +3579,21 @@ class AIAgent:
                         "Responses stream did not emit response.completed; falling back to create(stream=True). %s",
                         self._client_log_context(),
                     )
-                    return self._run_codex_create_stream_fallback(api_kwargs, client=active_client)
+                    return self._run_codex_create_stream_fallback(
+                        api_kwargs, client=active_client
+                    )
                 raise
 
     def _run_codex_create_stream_fallback(self, api_kwargs: dict, client: Any = None):
         """Fallback path for stream completion edge cases on Codex-style Responses backends."""
-        active_client = client or self._ensure_primary_openai_client(reason="codex_create_stream_fallback")
+        active_client = client or self._ensure_primary_openai_client(
+            reason="codex_create_stream_fallback"
+        )
         fallback_kwargs = dict(api_kwargs)
         fallback_kwargs["stream"] = True
-        fallback_kwargs = self._preflight_codex_api_kwargs(fallback_kwargs, allow_stream=True)
+        fallback_kwargs = self._preflight_codex_api_kwargs(
+            fallback_kwargs, allow_stream=True
+        )
         stream_or_response = active_client.responses.create(**fallback_kwargs)
 
         # Compatibility shim for mocks or providers that still return a concrete response.
@@ -3297,7 +3608,11 @@ class AIAgent:
                 event_type = getattr(event, "type", None)
                 if not event_type and isinstance(event, dict):
                     event_type = event.get("type")
-                if event_type not in {"response.completed", "response.incomplete", "response.failed"}:
+                if event_type not in {
+                    "response.completed",
+                    "response.incomplete",
+                    "response.failed",
+                }:
                     continue
 
                 terminal_response = getattr(event, "response", None)
@@ -3315,7 +3630,9 @@ class AIAgent:
 
         if terminal_response is not None:
             return terminal_response
-        raise RuntimeError("Responses create(stream=True) fallback did not emit a terminal response.")
+        raise RuntimeError(
+            "Responses create(stream=True) fallback did not emit a terminal response."
+        )
 
     def _try_refresh_codex_client_credentials(self, *, force: bool = True) -> bool:
         if self.api_mode != "codex_responses" or self.provider != "openai-codex":
@@ -3354,7 +3671,9 @@ class AIAgent:
             from hermes_cli.auth import resolve_nous_runtime_credentials
 
             creds = resolve_nous_runtime_credentials(
-                min_key_ttl_seconds=max(60, int(os.getenv("HERMES_NOUS_MIN_KEY_TTL_SECONDS", "1800"))),
+                min_key_ttl_seconds=max(
+                    60, int(os.getenv("HERMES_NOUS_MIN_KEY_TTL_SECONDS", "1800"))
+                ),
                 timeout_seconds=float(os.getenv("HERMES_NOUS_TIMEOUT_SECONDS", "15")),
                 force_mint=force,
             )
@@ -3382,7 +3701,9 @@ class AIAgent:
         return True
 
     def _try_refresh_anthropic_client_credentials(self) -> bool:
-        if self.api_mode != "anthropic_messages" or not hasattr(self, "_anthropic_api_key"):
+        if self.api_mode != "anthropic_messages" or not hasattr(
+            self, "_anthropic_api_key"
+        ):
             return False
         # Only refresh credentials for the native Anthropic provider.
         # Other anthropic_messages providers (MiniMax, Alibaba, etc.) use their own keys.
@@ -3390,7 +3711,10 @@ class AIAgent:
             return False
 
         try:
-            from agent.anthropic_adapter import resolve_anthropic_token, build_anthropic_client
+            from agent.anthropic_adapter import (
+                resolve_anthropic_token,
+                build_anthropic_client,
+            )
 
             new_token = resolve_anthropic_token()
         except Exception as exc:
@@ -3409,14 +3733,19 @@ class AIAgent:
             pass
 
         try:
-            self._anthropic_client = build_anthropic_client(new_token, getattr(self, "_anthropic_base_url", None))
+            self._anthropic_client = build_anthropic_client(
+                new_token, getattr(self, "_anthropic_base_url", None)
+            )
         except Exception as exc:
-            logger.warning("Failed to rebuild Anthropic client after credential refresh: %s", exc)
+            logger.warning(
+                "Failed to rebuild Anthropic client after credential refresh: %s", exc
+            )
             return False
 
         self._anthropic_api_key = new_token
         # Update OAuth flag — token type may have changed (API key ↔ OAuth)
         from agent.anthropic_adapter import _is_oauth_token
+
         self._is_anthropic_oauth = _is_oauth_token(new_token)
         return True
 
@@ -3440,7 +3769,11 @@ class AIAgent:
         def _call():
             try:
                 if self.api_mode == "codex_responses":
-                    request_client_holder["client"] = self._create_request_openai_client(reason="codex_stream_request")
+                    request_client_holder["client"] = (
+                        self._create_request_openai_client(
+                            reason="codex_stream_request"
+                        )
+                    )
                     result["response"] = self._run_codex_stream(
                         api_kwargs,
                         client=request_client_holder["client"],
@@ -3449,14 +3782,22 @@ class AIAgent:
                 elif self.api_mode == "anthropic_messages":
                     result["response"] = self._anthropic_messages_create(api_kwargs)
                 else:
-                    request_client_holder["client"] = self._create_request_openai_client(reason="chat_completion_request")
-                    result["response"] = request_client_holder["client"].chat.completions.create(**api_kwargs)
+                    request_client_holder["client"] = (
+                        self._create_request_openai_client(
+                            reason="chat_completion_request"
+                        )
+                    )
+                    result["response"] = request_client_holder[
+                        "client"
+                    ].chat.completions.create(**api_kwargs)
             except Exception as e:
                 result["error"] = e
             finally:
                 request_client = request_client_holder.get("client")
                 if request_client is not None:
-                    self._close_request_openai_client(request_client, reason="request_complete")
+                    self._close_request_openai_client(
+                        request_client, reason="request_complete"
+                    )
 
         t = threading.Thread(target=_call, daemon=True)
         t.start()
@@ -3478,7 +3819,9 @@ class AIAgent:
                     else:
                         request_client = request_client_holder.get("client")
                         if request_client is not None:
-                            self._close_request_openai_client(request_client, reason="interrupt_abort")
+                            self._close_request_openai_client(
+                                request_client, reason="interrupt_abort"
+                            )
                 except Exception:
                     pass
                 raise InterruptedError("Agent interrupted during API call")
@@ -3552,7 +3895,9 @@ class AIAgent:
         result = {"response": None, "error": None}
         request_client_holder = {"client": None}
         first_delta_fired = {"done": False}
-        deltas_were_sent = {"yes": False}  # Track if any deltas were fired (for fallback)
+        deltas_were_sent = {
+            "yes": False
+        }  # Track if any deltas were fired (for fallback)
 
         def _fire_first_delta():
             if not first_delta_fired["done"] and on_first_delta:
@@ -3564,11 +3909,17 @@ class AIAgent:
 
         def _call_chat_completions():
             """Stream a chat completions response."""
-            stream_kwargs = {**api_kwargs, "stream": True, "stream_options": {"include_usage": True}}
+            stream_kwargs = {
+                **api_kwargs,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
             request_client_holder["client"] = self._create_request_openai_client(
                 reason="chat_completion_stream_request"
             )
-            stream = request_client_holder["client"].chat.completions.create(**stream_kwargs)
+            stream = request_client_holder["client"].chat.completions.create(
+                **stream_kwargs
+            )
 
             content_parts: list = []
             tool_calls_acc: dict = {}
@@ -3595,7 +3946,9 @@ class AIAgent:
                     model_name = chunk.model
 
                 # Accumulate reasoning content
-                reasoning_text = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                reasoning_text = getattr(delta, "reasoning_content", None) or getattr(
+                    delta, "reasoning", None
+                )
                 if reasoning_text:
                     reasoning_parts.append(reasoning_text)
                     self._fire_reasoning_delta(reasoning_text)
@@ -3625,7 +3978,9 @@ class AIAgent:
                             if tc_delta.function.name:
                                 entry["function"]["name"] += tc_delta.function.name
                             if tc_delta.function.arguments:
-                                entry["function"]["arguments"] += tc_delta.function.arguments
+                                entry["function"]["arguments"] += (
+                                    tc_delta.function.arguments
+                                )
 
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
@@ -3641,14 +3996,16 @@ class AIAgent:
                 mock_tool_calls = []
                 for idx in sorted(tool_calls_acc):
                     tc = tool_calls_acc[idx]
-                    mock_tool_calls.append(SimpleNamespace(
-                        id=tc["id"],
-                        type=tc["type"],
-                        function=SimpleNamespace(
-                            name=tc["function"]["name"],
-                            arguments=tc["function"]["arguments"],
-                        ),
-                    ))
+                    mock_tool_calls.append(
+                        SimpleNamespace(
+                            id=tc["id"],
+                            type=tc["type"],
+                            function=SimpleNamespace(
+                                name=tc["function"]["name"],
+                                arguments=tc["function"]["arguments"],
+                            ),
+                        )
+                    )
 
             full_reasoning = "".join(reasoning_parts) or None
             mock_message = SimpleNamespace(
@@ -3723,12 +4080,18 @@ class AIAgent:
                     # double-delivery (partial streamed + full non-streamed).
                     # Let the error propagate; the partial content already
                     # reached the user via the stream.
-                    logger.warning("Streaming failed after partial delivery, not falling back: %s", e)
+                    logger.warning(
+                        "Streaming failed after partial delivery, not falling back: %s",
+                        e,
+                    )
                     result["error"] = e
                 else:
                     # Streaming failed before any tokens reached consumers.
                     # Safe to fall back to the standard non-streaming path.
-                    logger.info("Streaming failed before delivery, falling back to non-streaming: %s", e)
+                    logger.info(
+                        "Streaming failed before delivery, falling back to non-streaming: %s",
+                        e,
+                    )
                     try:
                         result["response"] = self._interruptible_api_call(api_kwargs)
                     except Exception as fallback_err:
@@ -3736,7 +4099,9 @@ class AIAgent:
             finally:
                 request_client = request_client_holder.get("client")
                 if request_client is not None:
-                    self._close_request_openai_client(request_client, reason="stream_request_complete")
+                    self._close_request_openai_client(
+                        request_client, reason="stream_request_complete"
+                    )
 
         t = threading.Thread(target=_call, daemon=True)
         t.start()
@@ -3755,7 +4120,9 @@ class AIAgent:
                     else:
                         request_client = request_client_holder.get("client")
                         if request_client is not None:
-                            self._close_request_openai_client(request_client, reason="stream_interrupt_abort")
+                            self._close_request_openai_client(
+                                request_client, reason="stream_interrupt_abort"
+                            )
                 except Exception:
                     pass
                 raise InterruptedError("Agent interrupted during streaming API call")
@@ -3791,12 +4158,14 @@ class AIAgent:
         # access for Codex providers.
         try:
             from agent.auxiliary_client import resolve_provider_client
+
             fb_client, _ = resolve_provider_client(
-                fb_provider, model=fb_model, raw_codex=True)
+                fb_provider, model=fb_model, raw_codex=True
+            )
             if fb_client is None:
                 logging.warning(
-                    "Fallback to %s failed: provider not configured",
-                    fb_provider)
+                    "Fallback to %s failed: provider not configured", fb_provider
+                )
                 return False
 
             # Determine api_mode from provider / base URL
@@ -3804,7 +4173,9 @@ class AIAgent:
             fb_base_url = str(fb_client.base_url)
             if fb_provider == "openai-codex":
                 fb_api_mode = "codex_responses"
-            elif fb_provider == "anthropic" or fb_base_url.rstrip("/").lower().endswith("/anthropic"):
+            elif fb_provider == "anthropic" or fb_base_url.rstrip("/").lower().endswith(
+                "/anthropic"
+            ):
                 fb_api_mode = "anthropic_messages"
             elif self._is_direct_openai_url(fb_base_url):
                 fb_api_mode = "codex_responses"
@@ -3818,11 +4189,22 @@ class AIAgent:
 
             if fb_api_mode == "anthropic_messages":
                 # Build native Anthropic client instead of using OpenAI client
-                from agent.anthropic_adapter import build_anthropic_client, resolve_anthropic_token, _is_oauth_token
-                effective_key = (fb_client.api_key or resolve_anthropic_token() or "") if fb_provider == "anthropic" else (fb_client.api_key or "")
+                from agent.anthropic_adapter import (
+                    build_anthropic_client,
+                    resolve_anthropic_token,
+                    _is_oauth_token,
+                )
+
+                effective_key = (
+                    (fb_client.api_key or resolve_anthropic_token() or "")
+                    if fb_provider == "anthropic"
+                    else (fb_client.api_key or "")
+                )
                 self._anthropic_api_key = effective_key
                 self._anthropic_base_url = getattr(fb_client, "base_url", None)
-                self._anthropic_client = build_anthropic_client(effective_key, self._anthropic_base_url)
+                self._anthropic_client = build_anthropic_client(
+                    effective_key, self._anthropic_base_url
+                )
                 self._is_anthropic_oauth = _is_oauth_token(effective_key)
                 self.client = None
                 self._client_kwargs = {}
@@ -3837,9 +4219,8 @@ class AIAgent:
             # Re-evaluate prompt caching for the new provider/model
             is_native_anthropic = fb_api_mode == "anthropic_messages"
             self._use_prompt_caching = (
-                ("openrouter" in fb_base_url.lower() and "claude" in fb_model.lower())
-                or is_native_anthropic
-            )
+                "openrouter" in fb_base_url.lower() and "claude" in fb_model.lower()
+            ) or is_native_anthropic
 
             print(
                 f"{self.log_prefix}🔄 Primary model failed — switching to fallback: "
@@ -3847,7 +4228,9 @@ class AIAgent:
             )
             logging.info(
                 "Fallback activated: %s → %s (%s)",
-                old_model, fb_model, fb_provider,
+                old_model,
+                fb_model,
+                fb_provider,
             )
             return True
         except Exception as e:
@@ -3861,7 +4244,10 @@ class AIAgent:
         if not isinstance(content, list):
             return False
         for part in content:
-            if isinstance(part, dict) and part.get("type") in {"image_url", "input_image"}:
+            if isinstance(part, dict) and part.get("type") in {
+                "image_url",
+                "input_image",
+            }:
                 return True
         return False
 
@@ -3870,7 +4256,7 @@ class AIAgent:
         header, _, data = str(image_url or "").partition(",")
         mime = "image/jpeg"
         if header.startswith("data:"):
-            mime_part = header[len("data:"):].split(";", 1)[0].strip()
+            mime_part = header[len("data:") :].split(";", 1)[0].strip()
             if mime_part.startswith("image/"):
                 mime = mime_part
         suffix = {
@@ -3880,7 +4266,9 @@ class AIAgent:
             "image/jpeg": ".jpg",
             "image/jpg": ".jpg",
         }.get(mime, ".jpg")
-        tmp = tempfile.NamedTemporaryFile(prefix="anthropic_image_", suffix=suffix, delete=False)
+        tmp = tempfile.NamedTemporaryFile(
+            prefix="anthropic_image_", suffix=suffix, delete=False
+        )
         with tmp:
             tmp.write(base64.b64decode(data))
         path = Path(tmp.name)
@@ -3905,14 +4293,18 @@ class AIAgent:
         vision_source = str(image_url or "")
         cleanup_path: Optional[Path] = None
         if vision_source.startswith("data:"):
-            vision_source, cleanup_path = self._materialize_data_url_for_vision(vision_source)
+            vision_source, cleanup_path = self._materialize_data_url_for_vision(
+                vision_source
+            )
 
         description = ""
         try:
             from tools.vision_tools import vision_analyze_tool
 
             result_json = asyncio.run(
-                vision_analyze_tool(image_url=vision_source, user_prompt=analysis_prompt)
+                vision_analyze_tool(
+                    image_url=vision_source, user_prompt=analysis_prompt
+                )
             )
             result = json.loads(result_json) if isinstance(result_json, str) else {}
             description = (result.get("analysis") or "").strip()
@@ -3930,9 +4322,7 @@ class AIAgent:
 
         note = f"[The {role_label} attached an image. Here's what it contains:\n{description}]"
         if vision_source and not str(image_url or "").startswith("data:"):
-            note += (
-                f"\n[If you need a closer look, use vision_analyze with image_url: {vision_source}]"
-            )
+            note += f"\n[If you need a closer look, use vision_analyze with image_url: {vision_source}]"
 
         self._anthropic_image_fallback_cache[cache_key] = note
         return note
@@ -3960,11 +4350,19 @@ class AIAgent:
 
             if ptype in {"image_url", "input_image"}:
                 image_data = part.get("image_url", {})
-                image_url = image_data.get("url", "") if isinstance(image_data, dict) else str(image_data or "")
+                image_url = (
+                    image_data.get("url", "")
+                    if isinstance(image_data, dict)
+                    else str(image_data or "")
+                )
                 if image_url:
-                    image_notes.append(self._describe_image_for_anthropic_fallback(image_url, role))
+                    image_notes.append(
+                        self._describe_image_for_anthropic_fallback(image_url, role)
+                    )
                 else:
-                    image_notes.append("[An image was attached but no image source was available.]")
+                    image_notes.append(
+                        "[An image was attached but no image source was available.]"
+                    )
                 continue
 
             text = str(part.get("text", "") or "").strip()
@@ -3979,7 +4377,9 @@ class AIAgent:
             return prefix
         if suffix:
             return suffix
-        return "[A multimodal message was converted to text for Anthropic compatibility.]"
+        return (
+            "[A multimodal message was converted to text for Anthropic compatibility.]"
+        )
 
     def _prepare_anthropic_messages_for_api(self, api_messages: list) -> list:
         if not any(
@@ -4009,6 +4409,7 @@ class AIAgent:
         """Build the keyword arguments dict for the active API mode."""
         if self.api_mode == "anthropic_messages":
             from agent.anthropic_adapter import build_anthropic_kwargs
+
             anthropic_messages = self._prepare_anthropic_messages_for_api(api_messages)
             return build_anthropic_kwargs(
                 model=self.model,
@@ -4065,7 +4466,10 @@ class AIAgent:
                     if github_reasoning is not None:
                         kwargs["reasoning"] = github_reasoning
                 else:
-                    kwargs["reasoning"] = {"effort": reasoning_effort, "summary": "auto"}
+                    kwargs["reasoning"] = {
+                        "effort": reasoning_effort,
+                        "summary": "auto",
+                    }
                     kwargs["include"] = ["reasoning.encrypted_content"]
             elif not is_github_responses:
                 kwargs["include"] = []
@@ -4166,10 +4570,7 @@ class AIAgent:
                     else:
                         extra_body["reasoning"] = rc
                 else:
-                    extra_body["reasoning"] = {
-                        "enabled": True,
-                        "effort": "medium"
-                    }
+                    extra_body["reasoning"] = {"enabled": True, "effort": "medium"}
 
         # Nous Portal product attribution
         if _is_nous:
@@ -4191,7 +4592,10 @@ class AIAgent:
             return True
         if "ai-gateway.vercel.sh" in self._base_url_lower:
             return True
-        if "models.github.ai" in self._base_url_lower or "api.githubcopilot.com" in self._base_url_lower:
+        if (
+            "models.github.ai" in self._base_url_lower
+            or "api.githubcopilot.com" in self._base_url_lower
+        ):
             try:
                 from hermes_cli.models import github_model_reasoning_efforts
 
@@ -4228,9 +4632,9 @@ class AIAgent:
         if self.reasoning_config and isinstance(self.reasoning_config, dict):
             if self.reasoning_config.get("enabled") is False:
                 return None
-            requested_effort = str(
-                self.reasoning_config.get("effort", "medium")
-            ).strip().lower()
+            requested_effort = (
+                str(self.reasoning_config.get("effort", "medium")).strip().lower()
+            )
         else:
             requested_effort = "medium"
 
@@ -4259,13 +4663,15 @@ class AIAgent:
         # directly in the content rather than returning separate API fields).
         if not reasoning_text:
             content = assistant_message.content or ""
-            think_blocks = re.findall(r'<think>(.*?)</think>', content, flags=re.DOTALL)
+            think_blocks = re.findall(r"<think>(.*?)</think>", content, flags=re.DOTALL)
             if think_blocks:
                 combined = "\n\n".join(b.strip() for b in think_blocks if b.strip())
                 reasoning_text = combined or None
 
         if reasoning_text and self.verbose_logging:
-            logging.debug(f"Captured reasoning ({len(reasoning_text)} chars): {reasoning_text}")
+            logging.debug(
+                f"Captured reasoning ({len(reasoning_text)} chars): {reasoning_text}"
+            )
 
         if reasoning_text and self.reasoning_callback:
             try:
@@ -4280,7 +4686,10 @@ class AIAgent:
             "finish_reason": finish_reason,
         }
 
-        if hasattr(assistant_message, 'reasoning_details') and assistant_message.reasoning_details:
+        if (
+            hasattr(assistant_message, "reasoning_details")
+            and assistant_message.reasoning_details
+        ):
             # Pass reasoning_details back unmodified so providers (OpenRouter,
             # Anthropic, OpenAI) can maintain reasoning continuity across turns.
             # Each provider may include opaque fields (signature, encrypted_content)
@@ -4319,7 +4728,10 @@ class AIAgent:
                 call_id = call_id.strip()
 
                 response_item_id = getattr(tool_call, "response_item_id", None)
-                if not isinstance(response_item_id, str) or not response_item_id.strip():
+                if (
+                    not isinstance(response_item_id, str)
+                    or not response_item_id.strip()
+                ):
                     _, embedded_response_item_id = self._split_responses_tool_id(raw_id)
                     response_item_id = embedded_response_item_id
 
@@ -4335,7 +4747,7 @@ class AIAgent:
                     "type": tool_call.type,
                     "function": {
                         "name": tool_call.function.name,
-                        "arguments": tool_call.function.arguments
+                        "arguments": tool_call.function.arguments,
                     },
                 }
                 # Preserve extra_content (e.g. Gemini thought_signature) so it
@@ -4371,7 +4783,8 @@ class AIAgent:
         _STRIP_KEYS = {"call_id", "response_item_id"}
         api_msg["tool_calls"] = [
             {k: v for k, v in tc.items() if k not in _STRIP_KEYS}
-            if isinstance(tc, dict) else tc
+            if isinstance(tc, dict)
+            else tc
             for tc in tool_calls
         ]
         return api_msg
@@ -4395,15 +4808,17 @@ class AIAgent:
         if "memory" not in self.valid_tool_names or not self._memory_store:
             return
         # honcho-only agent mode: skip local MEMORY.md flush
-        _hcfg = getattr(self, '_honcho_config', None)
+        _hcfg = getattr(self, "_honcho_config", None)
         if _hcfg and _hcfg.peer_memory_mode(_hcfg.ai_peer) == "honcho":
             return
-        effective_min = min_turns if min_turns is not None else self._memory_flush_min_turns
+        effective_min = (
+            min_turns if min_turns is not None else self._memory_flush_min_turns
+        )
         if self._user_turn_count < effective_min:
             return
 
         if messages is None:
-            messages = getattr(self, '_session_messages', None)
+            messages = getattr(self, "_session_messages", None)
         if not messages or len(messages) < 3:
             return
 
@@ -4413,7 +4828,11 @@ class AIAgent:
             "corrections, and recurring patterns over task-specific details.]"
         )
         _sentinel = f"__flush_{id(self)}_{time.monotonic()}"
-        flush_msg = {"role": "user", "content": flush_content, "_flush_sentinel": _sentinel}
+        flush_msg = {
+            "role": "user",
+            "content": flush_content,
+            "_flush_sentinel": _sentinel,
+        }
         messages.append(flush_msg)
 
         try:
@@ -4434,11 +4853,13 @@ class AIAgent:
                 api_messages.append(api_msg)
 
             if self._cached_system_prompt:
-                api_messages = [{"role": "system", "content": self._cached_system_prompt}] + api_messages
+                api_messages = [
+                    {"role": "system", "content": self._cached_system_prompt}
+                ] + api_messages
 
             # Make one API call with only the memory tool available
             memory_tool_def = None
-            for t in (self.tools or []):
+            for t in self.tools or []:
                 if t.get("function", {}).get("name") == "memory":
                     memory_tool_def = t
                     break
@@ -4450,6 +4871,7 @@ class AIAgent:
             # Use auxiliary client for the flush call when available --
             # it's cheaper and avoids Codex Responses API incompatibility.
             from agent.auxiliary_client import call_llm as _call_llm
+
             _aux_available = True
             try:
                 response = _call_llm(
@@ -4474,10 +4896,15 @@ class AIAgent:
                 response = self._run_codex_stream(codex_kwargs)
             elif not _aux_available and self.api_mode == "anthropic_messages":
                 # Native Anthropic — use the Anthropic client directly
-                from agent.anthropic_adapter import build_anthropic_kwargs as _build_ant_kwargs
+                from agent.anthropic_adapter import (
+                    build_anthropic_kwargs as _build_ant_kwargs,
+                )
+
                 ant_kwargs = _build_ant_kwargs(
-                    model=self.model, messages=api_messages,
-                    tools=[memory_tool_def], max_tokens=5120,
+                    model=self.model,
+                    messages=api_messages,
+                    tools=[memory_tool_def],
+                    max_tokens=5120,
                     reasoning_config=None,
                     preserve_dots=self._anthropic_preserve_dots(),
                 )
@@ -4490,7 +4917,9 @@ class AIAgent:
                     "temperature": 0.3,
                     **self._max_tokens_param(5120),
                 }
-                response = self._ensure_primary_openai_client(reason="flush_memories").chat.completions.create(**api_kwargs, timeout=30.0)
+                response = self._ensure_primary_openai_client(
+                    reason="flush_memories"
+                ).chat.completions.create(**api_kwargs, timeout=30.0)
 
             # Extract tool calls from the response, handling all API formats
             tool_calls = []
@@ -4499,8 +4928,14 @@ class AIAgent:
                 if assistant_msg and assistant_msg.tool_calls:
                     tool_calls = assistant_msg.tool_calls
             elif self.api_mode == "anthropic_messages" and not _aux_available:
-                from agent.anthropic_adapter import normalize_anthropic_response as _nar_flush
-                _flush_msg, _ = _nar_flush(response, strip_tool_prefix=getattr(self, '_is_anthropic_oauth', False))
+                from agent.anthropic_adapter import (
+                    normalize_anthropic_response as _nar_flush,
+                )
+
+                _flush_msg, _ = _nar_flush(
+                    response,
+                    strip_tool_prefix=getattr(self, "_is_anthropic_oauth", False),
+                )
                 if _flush_msg and _flush_msg.tool_calls:
                     tool_calls = _flush_msg.tool_calls
             elif hasattr(response, "choices") and response.choices:
@@ -4514,6 +4949,7 @@ class AIAgent:
                         args = json.loads(tc.function.arguments)
                         flush_target = args.get("target", "memory")
                         from tools.memory_tool import memory_tool as _memory_tool
+
                         result = _memory_tool(
                             action=args.get("action"),
                             target=flush_target,
@@ -4521,10 +4957,16 @@ class AIAgent:
                             old_text=args.get("old_text"),
                             store=self._memory_store,
                         )
-                        if self._honcho and flush_target == "user" and args.get("action") == "add":
+                        if (
+                            self._honcho
+                            and flush_target == "user"
+                            and args.get("action") == "add"
+                        ):
                             self._honcho_save_user_observation(args.get("content", ""))
                         if not self.quiet_mode:
-                            print(f"  🧠 Memory flush: saved to {args.get('target', 'memory')}")
+                            print(
+                                f"  🧠 Memory flush: saved to {args.get('target', 'memory')}"
+                            )
                     except Exception as e:
                         logger.debug("Memory flush tool call failed: %s", e)
         except Exception as e:
@@ -4539,7 +4981,14 @@ class AIAgent:
             if messages and messages[-1].get("_flush_sentinel") == _sentinel:
                 messages.pop()
 
-    def _compress_context(self, messages: list, system_message: str, *, approx_tokens: int = None, task_id: str = "default") -> tuple:
+    def _compress_context(
+        self,
+        messages: list,
+        system_message: str,
+        *,
+        approx_tokens: int = None,
+        task_id: str = "default",
+    ) -> tuple:
         """Compress conversation context and split the session in SQLite.
 
         Returns:
@@ -4548,7 +4997,9 @@ class AIAgent:
         # Pre-compression memory flush: let the model save memories before they're lost
         self.flush_memories(messages, min_turns=0)
 
-        compressed = self.context_compressor.compress(messages, current_tokens=approx_tokens)
+        compressed = self.context_compressor.compress(
+            messages, current_tokens=approx_tokens
+        )
 
         todo_snapshot = self._todo_store.format_for_injection()
         if todo_snapshot:
@@ -4564,7 +5015,9 @@ class AIAgent:
                 old_title = self._session_db.get_session_title(self.session_id)
                 self._session_db.end_session(self.session_id, "compression")
                 old_session_id = self.session_id
-                self.session_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+                self.session_id = (
+                    f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+                )
                 self._session_db.create_session(
                     session_id=self.session_id,
                     source=self.platform or "cli",
@@ -4574,11 +5027,15 @@ class AIAgent:
                 # Auto-number the title for the continuation session
                 if old_title:
                     try:
-                        new_title = self._session_db.get_next_title_in_lineage(old_title)
+                        new_title = self._session_db.get_next_title_in_lineage(
+                            old_title
+                        )
                         self._session_db.set_session_title(self.session_id, new_title)
                     except (ValueError, Exception) as e:
                         logger.debug("Could not propagate title on compression: %s", e)
-                self._session_db.update_system_prompt(self.session_id, new_system_prompt)
+                self._session_db.update_system_prompt(
+                    self.session_id, new_system_prompt
+                )
                 # Reset flush cursor — new session starts with no messages written
                 self._last_flushed_db_idx = 0
             except Exception as e:
@@ -4590,7 +5047,13 @@ class AIAgent:
 
         return compressed, new_system_prompt
 
-    def _execute_tool_calls(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
+    def _execute_tool_calls(
+        self,
+        assistant_message,
+        messages: list,
+        effective_task_id: str,
+        api_call_count: int = 0,
+    ) -> None:
         """Execute tool calls from the assistant message and append results to messages.
 
         Dispatches to concurrent execution only for batches that look
@@ -4613,7 +5076,9 @@ class AIAgent:
         finally:
             self._executing_tools = False
 
-    def _invoke_tool(self, function_name: str, function_args: dict, effective_task_id: str) -> str:
+    def _invoke_tool(
+        self, function_name: str, function_args: dict, effective_task_id: str
+    ) -> str:
         """Invoke a single tool and return the result string. No display logic.
 
         Handles both agent-level tools (todo, memory, etc.) and registry-dispatched
@@ -4622,6 +5087,7 @@ class AIAgent:
         """
         if function_name == "todo":
             from tools.todo_tool import todo_tool as _todo_tool
+
             return _todo_tool(
                 todos=function_args.get("todos"),
                 merge=function_args.get("merge", False),
@@ -4629,8 +5095,11 @@ class AIAgent:
             )
         elif function_name == "session_search":
             if not self._session_db:
-                return json.dumps({"success": False, "error": "Session database not available."})
+                return json.dumps(
+                    {"success": False, "error": "Session database not available."}
+                )
             from tools.session_search_tool import session_search as _session_search
+
             return _session_search(
                 query=function_args.get("query", ""),
                 role_filter=function_args.get("role_filter"),
@@ -4641,6 +5110,7 @@ class AIAgent:
         elif function_name == "memory":
             target = function_args.get("target", "memory")
             from tools.memory_tool import memory_tool as _memory_tool
+
             result = _memory_tool(
                 action=function_args.get("action"),
                 target=target,
@@ -4649,11 +5119,16 @@ class AIAgent:
                 store=self._memory_store,
             )
             # Also send user observations to Honcho when active
-            if self._honcho and target == "user" and function_args.get("action") == "add":
+            if (
+                self._honcho
+                and target == "user"
+                and function_args.get("action") == "add"
+            ):
                 self._honcho_save_user_observation(function_args.get("content", ""))
             return result
         elif function_name == "clarify":
             from tools.clarify_tool import clarify_tool as _clarify_tool
+
             return _clarify_tool(
                 question=function_args.get("question", ""),
                 choices=function_args.get("choices"),
@@ -4661,23 +5136,35 @@ class AIAgent:
             )
         elif function_name == "delegate_task":
             from tools.delegate_tool import delegate_task as _delegate_task
+
             return _delegate_task(
                 goal=function_args.get("goal"),
                 context=function_args.get("context"),
                 toolsets=function_args.get("toolsets"),
                 tasks=function_args.get("tasks"),
                 max_iterations=function_args.get("max_iterations"),
+                background=function_args.get("background", False),
                 parent_agent=self,
             )
         else:
             return handle_function_call(
-                function_name, function_args, effective_task_id,
-                enabled_tools=list(self.valid_tool_names) if self.valid_tool_names else None,
+                function_name,
+                function_args,
+                effective_task_id,
+                enabled_tools=list(self.valid_tool_names)
+                if self.valid_tool_names
+                else None,
                 honcho_manager=self._honcho,
                 honcho_session_key=self._honcho_session_key,
             )
 
-    def _execute_tool_calls_concurrent(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
+    def _execute_tool_calls_concurrent(
+        self,
+        assistant_message,
+        messages: list,
+        effective_task_id: str,
+        api_call_count: int = 0,
+    ) -> None:
         """Execute multiple tool calls concurrently using a thread pool.
 
         Results are collected in the original tool-call order and appended to
@@ -4690,11 +5177,13 @@ class AIAgent:
         if self._interrupt_requested:
             print(f"{self.log_prefix}⚡ Interrupt: skipping {num_tools} tool call(s)")
             for tc in tool_calls:
-                messages.append({
-                    "role": "tool",
-                    "content": f"[Tool execution cancelled — {tc.function.name} was skipped due to user interrupt]",
-                    "tool_call_id": tc.id,
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "content": f"[Tool execution cancelled — {tc.function.name} was skipped due to user interrupt]",
+                        "tool_call_id": tc.id,
+                    }
+                )
             return
 
         # ── Parse args + pre-execution bookkeeping ───────────────────────
@@ -4716,12 +5205,19 @@ class AIAgent:
                 function_args = {}
 
             # Checkpoint for file-mutating tools
-            if function_name in ("write_file", "patch") and self._checkpoint_mgr.enabled:
+            if (
+                function_name in ("write_file", "patch")
+                and self._checkpoint_mgr.enabled
+            ):
                 try:
                     file_path = function_args.get("path", "")
                     if file_path:
-                        work_dir = self._checkpoint_mgr.get_working_dir_for_path(file_path)
-                        self._checkpoint_mgr.ensure_checkpoint(work_dir, f"before {function_name}")
+                        work_dir = self._checkpoint_mgr.get_working_dir_for_path(
+                            file_path
+                        )
+                        self._checkpoint_mgr.ensure_checkpoint(
+                            work_dir, f"before {function_name}"
+                        )
                 except Exception:
                     pass
 
@@ -4730,7 +5226,9 @@ class AIAgent:
                 try:
                     cmd = function_args.get("command", "")
                     if _is_destructive_command(cmd):
-                        cwd = function_args.get("workdir") or os.getenv("TERMINAL_CWD", os.getcwd())
+                        cwd = function_args.get("workdir") or os.getenv(
+                            "TERMINAL_CWD", os.getcwd()
+                        )
                         self._checkpoint_mgr.ensure_checkpoint(
                             cwd, f"before terminal: {cmd[:60]}"
                         )
@@ -4749,8 +5247,14 @@ class AIAgent:
                     print(f"  📞 Tool {i}: {name}({list(args.keys())})")
                     print(f"     Args: {args_str}")
                 else:
-                    args_preview = args_str[:self.log_prefix_chars] + "..." if len(args_str) > self.log_prefix_chars else args_str
-                    print(f"  📞 Tool {i}: {name}({list(args.keys())}) - {args_preview}")
+                    args_preview = (
+                        args_str[: self.log_prefix_chars] + "..."
+                        if len(args_str) > self.log_prefix_chars
+                        else args_str
+                    )
+                    print(
+                        f"  📞 Tool {i}: {name}({list(args.keys())}) - {args_preview}"
+                    )
 
         for _, name, args in parsed_calls:
             if self.tool_progress_callback:
@@ -4768,10 +5272,17 @@ class AIAgent:
             """Worker function executed in a thread."""
             start = time.time()
             try:
-                result = self._invoke_tool(function_name, function_args, effective_task_id)
+                result = self._invoke_tool(
+                    function_name, function_args, effective_task_id
+                )
             except Exception as tool_error:
                 result = f"Error executing tool '{function_name}': {tool_error}"
-                logger.error("_invoke_tool raised for %s: %s", function_name, tool_error, exc_info=True)
+                logger.error(
+                    "_invoke_tool raised for %s: %s",
+                    function_name,
+                    tool_error,
+                    exc_info=True,
+                )
             duration = time.time() - start
             is_error, _ = _detect_tool_failure(function_name, result)
             results[index] = (function_name, function_args, result, duration, is_error)
@@ -4780,12 +5291,16 @@ class AIAgent:
         spinner = None
         if self.quiet_mode:
             face = random.choice(KawaiiSpinner.KAWAII_WAITING)
-            spinner = KawaiiSpinner(f"{face} ⚡ running {num_tools} tools concurrently", spinner_type='dots')
+            spinner = KawaiiSpinner(
+                f"{face} ⚡ running {num_tools} tools concurrently", spinner_type="dots"
+            )
             spinner.start()
 
         try:
             max_workers = min(num_tools, _MAX_TOOL_WORKERS)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers
+            ) as executor:
                 futures = []
                 for i, (tc, name, args) in enumerate(parsed_calls):
                     f = executor.submit(_run_tool, i, tc, name, args)
@@ -4798,37 +5313,68 @@ class AIAgent:
                 # Build a summary message for the spinner stop
                 completed = sum(1 for r in results if r is not None)
                 total_dur = sum(r[3] for r in results if r is not None)
-                spinner.stop(f"⚡ {completed}/{num_tools} tools completed in {total_dur:.1f}s total")
+                spinner.stop(
+                    f"⚡ {completed}/{num_tools} tools completed in {total_dur:.1f}s total"
+                )
 
         # ── Post-execution: display per-tool results ─────────────────────
         for i, (tc, name, args) in enumerate(parsed_calls):
             r = results[i]
             if r is None:
                 # Shouldn't happen, but safety fallback
-                function_result = f"Error executing tool '{name}': thread did not return a result"
+                function_result = (
+                    f"Error executing tool '{name}': thread did not return a result"
+                )
                 tool_duration = 0.0
             else:
-                function_name, function_args, function_result, tool_duration, is_error = r
+                (
+                    function_name,
+                    function_args,
+                    function_result,
+                    tool_duration,
+                    is_error,
+                ) = r
 
                 if is_error:
-                    result_preview = function_result[:200] if len(function_result) > 200 else function_result
-                    logger.warning("Tool %s returned error (%.2fs): %s", function_name, tool_duration, result_preview)
+                    result_preview = (
+                        function_result[:200]
+                        if len(function_result) > 200
+                        else function_result
+                    )
+                    logger.warning(
+                        "Tool %s returned error (%.2fs): %s",
+                        function_name,
+                        tool_duration,
+                        result_preview,
+                    )
 
                 if self.verbose_logging:
-                    logging.debug(f"Tool {function_name} completed in {tool_duration:.2f}s")
-                    logging.debug(f"Tool result ({len(function_result)} chars): {function_result}")
+                    logging.debug(
+                        f"Tool {function_name} completed in {tool_duration:.2f}s"
+                    )
+                    logging.debug(
+                        f"Tool result ({len(function_result)} chars): {function_result}"
+                    )
 
             # Print cute message per tool
             if self.quiet_mode:
-                cute_msg = _get_cute_tool_message_impl(name, args, tool_duration, result=function_result)
+                cute_msg = _get_cute_tool_message_impl(
+                    name, args, tool_duration, result=function_result
+                )
                 print(f"  {cute_msg}")
             elif not self.quiet_mode:
                 if self.verbose_logging:
-                    print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s")
+                    print(f"  ✅ Tool {i + 1} completed in {tool_duration:.2f}s")
                     print(f"     Result: {function_result}")
                 else:
-                    response_preview = function_result[:self.log_prefix_chars] + "..." if len(function_result) > self.log_prefix_chars else function_result
-                    print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s - {response_preview}")
+                    response_preview = (
+                        function_result[: self.log_prefix_chars] + "..."
+                        if len(function_result) > self.log_prefix_chars
+                        else function_result
+                    )
+                    print(
+                        f"  ✅ Tool {i + 1} completed in {tool_duration:.2f}s - {response_preview}"
+                    )
 
             # Truncate oversized results
             MAX_TOOL_RESULT_CHARS = 100_000
@@ -4863,19 +5409,32 @@ class AIAgent:
                 messages[-1]["content"] = last_content + f"\n\n{budget_warning}"
             if not self.quiet_mode:
                 remaining = self.max_iterations - api_call_count
-                tier = "⚠️  WARNING" if remaining <= self.max_iterations * 0.1 else "💡 CAUTION"
+                tier = (
+                    "⚠️  WARNING"
+                    if remaining <= self.max_iterations * 0.1
+                    else "💡 CAUTION"
+                )
                 print(f"{self.log_prefix}{tier}: {remaining} iterations remaining")
 
-    def _execute_tool_calls_sequential(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
+    def _execute_tool_calls_sequential(
+        self,
+        assistant_message,
+        messages: list,
+        effective_task_id: str,
+        api_call_count: int = 0,
+    ) -> None:
         """Execute tool calls sequentially (original behavior). Used for single calls or interactive tools."""
         for i, tool_call in enumerate(assistant_message.tool_calls, 1):
             # SAFETY: check interrupt BEFORE starting each tool.
             # If the user sent "stop" during a previous tool's execution,
             # do NOT start any more tools -- skip them all immediately.
             if self._interrupt_requested:
-                remaining_calls = assistant_message.tool_calls[i-1:]
+                remaining_calls = assistant_message.tool_calls[i - 1 :]
                 if remaining_calls:
-                    self._vprint(f"{self.log_prefix}⚡ Interrupt: skipping {len(remaining_calls)} tool call(s)", force=True)
+                    self._vprint(
+                        f"{self.log_prefix}⚡ Interrupt: skipping {len(remaining_calls)} tool call(s)",
+                        force=True,
+                    )
                 for skipped_tc in remaining_calls:
                     skipped_name = skipped_tc.function.name
                     skip_msg = {
@@ -4905,11 +5464,19 @@ class AIAgent:
             if not self.quiet_mode:
                 args_str = json.dumps(function_args, ensure_ascii=False)
                 if self.verbose_logging:
-                    print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())})")
+                    print(
+                        f"  📞 Tool {i}: {function_name}({list(function_args.keys())})"
+                    )
                     print(f"     Args: {args_str}")
                 else:
-                    args_preview = args_str[:self.log_prefix_chars] + "..." if len(args_str) > self.log_prefix_chars else args_str
-                    print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())}) - {args_preview}")
+                    args_preview = (
+                        args_str[: self.log_prefix_chars] + "..."
+                        if len(args_str) > self.log_prefix_chars
+                        else args_str
+                    )
+                    print(
+                        f"  📞 Tool {i}: {function_name}({list(function_args.keys())}) - {args_preview}"
+                    )
 
             if self.tool_progress_callback:
                 try:
@@ -4919,11 +5486,16 @@ class AIAgent:
                     logging.debug(f"Tool progress callback error: {cb_err}")
 
             # Checkpoint: snapshot working dir before file-mutating tools
-            if function_name in ("write_file", "patch") and self._checkpoint_mgr.enabled:
+            if (
+                function_name in ("write_file", "patch")
+                and self._checkpoint_mgr.enabled
+            ):
                 try:
                     file_path = function_args.get("path", "")
                     if file_path:
-                        work_dir = self._checkpoint_mgr.get_working_dir_for_path(file_path)
+                        work_dir = self._checkpoint_mgr.get_working_dir_for_path(
+                            file_path
+                        )
                         self._checkpoint_mgr.ensure_checkpoint(
                             work_dir, f"before {function_name}"
                         )
@@ -4935,7 +5507,9 @@ class AIAgent:
                 try:
                     cmd = function_args.get("command", "")
                     if _is_destructive_command(cmd):
-                        cwd = function_args.get("workdir") or os.getenv("TERMINAL_CWD", os.getcwd())
+                        cwd = function_args.get("workdir") or os.getenv(
+                            "TERMINAL_CWD", os.getcwd()
+                        )
                         self._checkpoint_mgr.ensure_checkpoint(
                             cwd, f"before terminal: {cmd[:60]}"
                         )
@@ -4946,6 +5520,7 @@ class AIAgent:
 
             if function_name == "todo":
                 from tools.todo_tool import todo_tool as _todo_tool
+
                 function_result = _todo_tool(
                     todos=function_args.get("todos"),
                     merge=function_args.get("merge", False),
@@ -4953,12 +5528,19 @@ class AIAgent:
                 )
                 tool_duration = time.time() - tool_start_time
                 if self.quiet_mode:
-                    self._vprint(f"  {_get_cute_tool_message_impl('todo', function_args, tool_duration, result=function_result)}")
+                    self._vprint(
+                        f"  {_get_cute_tool_message_impl('todo', function_args, tool_duration, result=function_result)}"
+                    )
             elif function_name == "session_search":
                 if not self._session_db:
-                    function_result = json.dumps({"success": False, "error": "Session database not available."})
+                    function_result = json.dumps(
+                        {"success": False, "error": "Session database not available."}
+                    )
                 else:
-                    from tools.session_search_tool import session_search as _session_search
+                    from tools.session_search_tool import (
+                        session_search as _session_search,
+                    )
+
                     function_result = _session_search(
                         query=function_args.get("query", ""),
                         role_filter=function_args.get("role_filter"),
@@ -4968,10 +5550,13 @@ class AIAgent:
                     )
                 tool_duration = time.time() - tool_start_time
                 if self.quiet_mode:
-                    self._vprint(f"  {_get_cute_tool_message_impl('session_search', function_args, tool_duration, result=function_result)}")
+                    self._vprint(
+                        f"  {_get_cute_tool_message_impl('session_search', function_args, tool_duration, result=function_result)}"
+                    )
             elif function_name == "memory":
                 target = function_args.get("target", "memory")
                 from tools.memory_tool import memory_tool as _memory_tool
+
                 function_result = _memory_tool(
                     action=function_args.get("action"),
                     target=target,
@@ -4980,13 +5565,20 @@ class AIAgent:
                     store=self._memory_store,
                 )
                 # Also send user observations to Honcho when active
-                if self._honcho and target == "user" and function_args.get("action") == "add":
+                if (
+                    self._honcho
+                    and target == "user"
+                    and function_args.get("action") == "add"
+                ):
                     self._honcho_save_user_observation(function_args.get("content", ""))
                 tool_duration = time.time() - tool_start_time
                 if self.quiet_mode:
-                    self._vprint(f"  {_get_cute_tool_message_impl('memory', function_args, tool_duration, result=function_result)}")
+                    self._vprint(
+                        f"  {_get_cute_tool_message_impl('memory', function_args, tool_duration, result=function_result)}"
+                    )
             elif function_name == "clarify":
                 from tools.clarify_tool import clarify_tool as _clarify_tool
+
                 function_result = _clarify_tool(
                     question=function_args.get("question", ""),
                     choices=function_args.get("choices"),
@@ -4994,19 +5586,32 @@ class AIAgent:
                 )
                 tool_duration = time.time() - tool_start_time
                 if self.quiet_mode:
-                    self._vprint(f"  {_get_cute_tool_message_impl('clarify', function_args, tool_duration, result=function_result)}")
+                    self._vprint(
+                        f"  {_get_cute_tool_message_impl('clarify', function_args, tool_duration, result=function_result)}"
+                    )
             elif function_name == "delegate_task":
                 from tools.delegate_tool import delegate_task as _delegate_task
+
                 tasks_arg = function_args.get("tasks")
+                is_background = function_args.get("background", False)
                 if tasks_arg and isinstance(tasks_arg, list):
                     spinner_label = f"🔀 delegating {len(tasks_arg)} tasks"
+                elif is_background:
+                    goal_preview = (function_args.get("goal") or "")[:30]
+                    spinner_label = (
+                        f"🔀⏳ {goal_preview}" if goal_preview else "🔀⏳ delegating"
+                    )
                 else:
                     goal_preview = (function_args.get("goal") or "")[:30]
-                    spinner_label = f"🔀 {goal_preview}" if goal_preview else "🔀 delegating"
+                    spinner_label = (
+                        f"🔀 {goal_preview}" if goal_preview else "🔀 delegating"
+                    )
                 spinner = None
                 if self.quiet_mode:
                     face = random.choice(KawaiiSpinner.KAWAII_WAITING)
-                    spinner = KawaiiSpinner(f"{face} {spinner_label}", spinner_type='dots')
+                    spinner = KawaiiSpinner(
+                        f"{face} {spinner_label}", spinner_type="dots"
+                    )
                     spinner.start()
                 self._delegate_spinner = spinner
                 _delegate_result = None
@@ -5017,13 +5622,19 @@ class AIAgent:
                         toolsets=function_args.get("toolsets"),
                         tasks=tasks_arg,
                         max_iterations=function_args.get("max_iterations"),
+                        background=is_background,
                         parent_agent=self,
                     )
                     _delegate_result = function_result
                 finally:
                     self._delegate_spinner = None
                     tool_duration = time.time() - tool_start_time
-                    cute_msg = _get_cute_tool_message_impl('delegate_task', function_args, tool_duration, result=_delegate_result)
+                    cute_msg = _get_cute_tool_message_impl(
+                        "delegate_task",
+                        function_args,
+                        tool_duration,
+                        result=_delegate_result,
+                    )
                     if spinner:
                         spinner.stop(cute_msg)
                     elif self.quiet_mode:
@@ -5031,53 +5642,97 @@ class AIAgent:
             elif self.quiet_mode:
                 face = random.choice(KawaiiSpinner.KAWAII_WAITING)
                 emoji = _get_tool_emoji(function_name)
-                preview = _build_tool_preview(function_name, function_args) or function_name
+                preview = (
+                    _build_tool_preview(function_name, function_args) or function_name
+                )
                 if len(preview) > 30:
                     preview = preview[:27] + "..."
-                spinner = KawaiiSpinner(f"{face} {emoji} {preview}", spinner_type='dots')
+                spinner = KawaiiSpinner(
+                    f"{face} {emoji} {preview}", spinner_type="dots"
+                )
                 spinner.start()
                 _spinner_result = None
                 try:
                     function_result = handle_function_call(
-                        function_name, function_args, effective_task_id,
-                        enabled_tools=list(self.valid_tool_names) if self.valid_tool_names else None,
+                        function_name,
+                        function_args,
+                        effective_task_id,
+                        enabled_tools=list(self.valid_tool_names)
+                        if self.valid_tool_names
+                        else None,
                         honcho_manager=self._honcho,
                         honcho_session_key=self._honcho_session_key,
                     )
                     _spinner_result = function_result
                 except Exception as tool_error:
-                    function_result = f"Error executing tool '{function_name}': {tool_error}"
-                    logger.error("handle_function_call raised for %s: %s", function_name, tool_error, exc_info=True)
+                    function_result = (
+                        f"Error executing tool '{function_name}': {tool_error}"
+                    )
+                    logger.error(
+                        "handle_function_call raised for %s: %s",
+                        function_name,
+                        tool_error,
+                        exc_info=True,
+                    )
                 finally:
                     tool_duration = time.time() - tool_start_time
-                    cute_msg = _get_cute_tool_message_impl(function_name, function_args, tool_duration, result=_spinner_result)
+                    cute_msg = _get_cute_tool_message_impl(
+                        function_name,
+                        function_args,
+                        tool_duration,
+                        result=_spinner_result,
+                    )
                     spinner.stop(cute_msg)
             else:
                 try:
                     function_result = handle_function_call(
-                        function_name, function_args, effective_task_id,
-                        enabled_tools=list(self.valid_tool_names) if self.valid_tool_names else None,
+                        function_name,
+                        function_args,
+                        effective_task_id,
+                        enabled_tools=list(self.valid_tool_names)
+                        if self.valid_tool_names
+                        else None,
                         honcho_manager=self._honcho,
                         honcho_session_key=self._honcho_session_key,
                     )
                 except Exception as tool_error:
-                    function_result = f"Error executing tool '{function_name}': {tool_error}"
-                    logger.error("handle_function_call raised for %s: %s", function_name, tool_error, exc_info=True)
+                    function_result = (
+                        f"Error executing tool '{function_name}': {tool_error}"
+                    )
+                    logger.error(
+                        "handle_function_call raised for %s: %s",
+                        function_name,
+                        tool_error,
+                        exc_info=True,
+                    )
                 tool_duration = time.time() - tool_start_time
 
-            result_preview = function_result if self.verbose_logging else (
-                function_result[:200] if len(function_result) > 200 else function_result
+            result_preview = (
+                function_result
+                if self.verbose_logging
+                else (
+                    function_result[:200]
+                    if len(function_result) > 200
+                    else function_result
+                )
             )
 
             # Log tool errors to the persistent error log so [error] tags
             # in the UI always have a corresponding detailed entry on disk.
             _is_error_result, _ = _detect_tool_failure(function_name, function_result)
             if _is_error_result:
-                logger.warning("Tool %s returned error (%.2fs): %s", function_name, tool_duration, result_preview)
+                logger.warning(
+                    "Tool %s returned error (%.2fs): %s",
+                    function_name,
+                    tool_duration,
+                    result_preview,
+                )
 
             if self.verbose_logging:
                 logging.debug(f"Tool {function_name} completed in {tool_duration:.2f}s")
-                logging.debug(f"Tool result ({len(function_result)} chars): {function_result}")
+                logging.debug(
+                    f"Tool result ({len(function_result)} chars): {function_result}"
+                )
 
             # Guard against tools returning absurdly large content that would
             # blow up the context window. 100K chars ≈ 25K tokens — generous
@@ -5095,7 +5750,7 @@ class AIAgent:
             tool_msg = {
                 "role": "tool",
                 "content": function_result,
-                "tool_call_id": tool_call.id
+                "tool_call_id": tool_call.id,
             }
             messages.append(tool_msg)
 
@@ -5104,18 +5759,27 @@ class AIAgent:
                     print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s")
                     print(f"     Result: {function_result}")
                 else:
-                    response_preview = function_result[:self.log_prefix_chars] + "..." if len(function_result) > self.log_prefix_chars else function_result
-                    print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s - {response_preview}")
+                    response_preview = (
+                        function_result[: self.log_prefix_chars] + "..."
+                        if len(function_result) > self.log_prefix_chars
+                        else function_result
+                    )
+                    print(
+                        f"  ✅ Tool {i} completed in {tool_duration:.2f}s - {response_preview}"
+                    )
 
             if self._interrupt_requested and i < len(assistant_message.tool_calls):
                 remaining = len(assistant_message.tool_calls) - i
-                self._vprint(f"{self.log_prefix}⚡ Interrupt: skipping {remaining} remaining tool call(s)", force=True)
+                self._vprint(
+                    f"{self.log_prefix}⚡ Interrupt: skipping {remaining} remaining tool call(s)",
+                    force=True,
+                )
                 for skipped_tc in assistant_message.tool_calls[i:]:
                     skipped_name = skipped_tc.function.name
                     skip_msg = {
                         "role": "tool",
                         "content": f"[Tool execution skipped — {skipped_name} was not started. User sent a new message]",
-                        "tool_call_id": skipped_tc.id
+                        "tool_call_id": skipped_tc.id,
                     }
                     messages.append(skip_msg)
                 break
@@ -5141,7 +5805,11 @@ class AIAgent:
                 messages[-1]["content"] = last_content + f"\n\n{budget_warning}"
             if not self.quiet_mode:
                 remaining = self.max_iterations - api_call_count
-                tier = "⚠️  WARNING" if remaining <= self.max_iterations * 0.1 else "💡 CAUTION"
+                tier = (
+                    "⚠️  WARNING"
+                    if remaining <= self.max_iterations * 0.1
+                    else "💡 CAUTION"
+                )
                 print(f"{self.log_prefix}{tier}: {remaining} iterations remaining")
 
     def _get_budget_warning(self, api_call_count: int) -> Optional[str]:
@@ -5179,9 +5847,16 @@ class AIAgent:
         For CLI: prints a formatted line with a progress bar.
         For gateway: fires status_callback so the platform can send a chat message.
         """
-        from agent.display import format_context_pressure, format_context_pressure_gateway
+        from agent.display import (
+            format_context_pressure,
+            format_context_pressure_gateway,
+        )
 
-        threshold_pct = compressor.threshold_tokens / compressor.context_length if compressor.context_length else 0.5
+        threshold_pct = (
+            compressor.threshold_tokens / compressor.context_length
+            if compressor.context_length
+            else 0.5
+        )
 
         # CLI output — always shown (these are user-facing status notifications,
         # not verbose debug output, so they bypass quiet_mode).
@@ -5209,7 +5884,9 @@ class AIAgent:
 
     def _handle_max_iterations(self, messages: list, api_call_count: int) -> str:
         """Request a summary when max iterations are reached. Returns the final response text."""
-        print(f"⚠️  Reached maximum iterations ({self.max_iterations}). Requesting summary...")
+        print(
+            f"⚠️  Reached maximum iterations ({self.max_iterations}). Requesting summary..."
+        )
 
         summary_request = (
             "You've reached the maximum number of tool-calling iterations allowed. "
@@ -5233,9 +5910,13 @@ class AIAgent:
 
             effective_system = self._cached_system_prompt or ""
             if self.ephemeral_system_prompt:
-                effective_system = (effective_system + "\n\n" + self.ephemeral_system_prompt).strip()
+                effective_system = (
+                    effective_system + "\n\n" + self.ephemeral_system_prompt
+                ).strip()
             if effective_system:
-                api_messages = [{"role": "system", "content": effective_system}] + api_messages
+                api_messages = [
+                    {"role": "system", "content": effective_system}
+                ] + api_messages
             if self.prefill_messages:
                 sys_offset = 1 if effective_system else 0
                 for idx, pfm in enumerate(self.prefill_messages):
@@ -5249,7 +5930,7 @@ class AIAgent:
                 else:
                     summary_extra_body["reasoning"] = {
                         "enabled": True,
-                        "effort": "medium"
+                        "effort": "medium",
                     }
             if _is_nous:
                 summary_extra_body["tags"] = ["product=hermes-agent"]
@@ -5259,7 +5940,11 @@ class AIAgent:
                 codex_kwargs.pop("tools", None)
                 summary_response = self._run_codex_stream(codex_kwargs)
                 assistant_message, _ = self._normalize_codex_response(summary_response)
-                final_response = (assistant_message.content or "").strip() if assistant_message else ""
+                final_response = (
+                    (assistant_message.content or "").strip()
+                    if assistant_message
+                    else ""
+                )
             else:
                 summary_kwargs = {
                     "model": self.model,
@@ -5285,29 +5970,50 @@ class AIAgent:
                     summary_kwargs["extra_body"] = summary_extra_body
 
                 if self.api_mode == "anthropic_messages":
-                    from agent.anthropic_adapter import build_anthropic_kwargs as _bak, normalize_anthropic_response as _nar
-                    _ant_kw = _bak(model=self.model, messages=api_messages, tools=None,
-                                   max_tokens=self.max_tokens, reasoning_config=self.reasoning_config,
-                                   is_oauth=getattr(self, '_is_anthropic_oauth', False),
-                                   preserve_dots=self._anthropic_preserve_dots())
+                    from agent.anthropic_adapter import (
+                        build_anthropic_kwargs as _bak,
+                        normalize_anthropic_response as _nar,
+                    )
+
+                    _ant_kw = _bak(
+                        model=self.model,
+                        messages=api_messages,
+                        tools=None,
+                        max_tokens=self.max_tokens,
+                        reasoning_config=self.reasoning_config,
+                        is_oauth=getattr(self, "_is_anthropic_oauth", False),
+                        preserve_dots=self._anthropic_preserve_dots(),
+                    )
                     summary_response = self._anthropic_messages_create(_ant_kw)
-                    _msg, _ = _nar(summary_response, strip_tool_prefix=getattr(self, '_is_anthropic_oauth', False))
+                    _msg, _ = _nar(
+                        summary_response,
+                        strip_tool_prefix=getattr(self, "_is_anthropic_oauth", False),
+                    )
                     final_response = (_msg.content or "").strip()
                 else:
-                    summary_response = self._ensure_primary_openai_client(reason="iteration_limit_summary").chat.completions.create(**summary_kwargs)
+                    summary_response = self._ensure_primary_openai_client(
+                        reason="iteration_limit_summary"
+                    ).chat.completions.create(**summary_kwargs)
 
-                    if summary_response.choices and summary_response.choices[0].message.content:
+                    if (
+                        summary_response.choices
+                        and summary_response.choices[0].message.content
+                    ):
                         final_response = summary_response.choices[0].message.content
                     else:
                         final_response = ""
 
             if final_response:
                 if "<think>" in final_response:
-                    final_response = re.sub(r'<think>.*?</think>\s*', '', final_response, flags=re.DOTALL).strip()
+                    final_response = re.sub(
+                        r"<think>.*?</think>\s*", "", final_response, flags=re.DOTALL
+                    ).strip()
                 if final_response:
                     messages.append({"role": "assistant", "content": final_response})
                 else:
-                    final_response = "I reached the iteration limit and couldn't generate a summary."
+                    final_response = (
+                        "I reached the iteration limit and couldn't generate a summary."
+                    )
             else:
                 # Retry summary generation
                 if self.api_mode == "codex_responses":
@@ -5315,15 +6021,29 @@ class AIAgent:
                     codex_kwargs.pop("tools", None)
                     retry_response = self._run_codex_stream(codex_kwargs)
                     retry_msg, _ = self._normalize_codex_response(retry_response)
-                    final_response = (retry_msg.content or "").strip() if retry_msg else ""
+                    final_response = (
+                        (retry_msg.content or "").strip() if retry_msg else ""
+                    )
                 elif self.api_mode == "anthropic_messages":
-                    from agent.anthropic_adapter import build_anthropic_kwargs as _bak2, normalize_anthropic_response as _nar2
-                    _ant_kw2 = _bak2(model=self.model, messages=api_messages, tools=None,
-                                    is_oauth=getattr(self, '_is_anthropic_oauth', False),
-                                    max_tokens=self.max_tokens, reasoning_config=self.reasoning_config,
-                                    preserve_dots=self._anthropic_preserve_dots())
+                    from agent.anthropic_adapter import (
+                        build_anthropic_kwargs as _bak2,
+                        normalize_anthropic_response as _nar2,
+                    )
+
+                    _ant_kw2 = _bak2(
+                        model=self.model,
+                        messages=api_messages,
+                        tools=None,
+                        is_oauth=getattr(self, "_is_anthropic_oauth", False),
+                        max_tokens=self.max_tokens,
+                        reasoning_config=self.reasoning_config,
+                        preserve_dots=self._anthropic_preserve_dots(),
+                    )
                     retry_response = self._anthropic_messages_create(_ant_kw2)
-                    _retry_msg, _ = _nar2(retry_response, strip_tool_prefix=getattr(self, '_is_anthropic_oauth', False))
+                    _retry_msg, _ = _nar2(
+                        retry_response,
+                        strip_tool_prefix=getattr(self, "_is_anthropic_oauth", False),
+                    )
                     final_response = (_retry_msg.content or "").strip()
                 else:
                     summary_kwargs = {
@@ -5335,22 +6055,36 @@ class AIAgent:
                     if summary_extra_body:
                         summary_kwargs["extra_body"] = summary_extra_body
 
-                    summary_response = self._ensure_primary_openai_client(reason="iteration_limit_summary_retry").chat.completions.create(**summary_kwargs)
+                    summary_response = self._ensure_primary_openai_client(
+                        reason="iteration_limit_summary_retry"
+                    ).chat.completions.create(**summary_kwargs)
 
-                    if summary_response.choices and summary_response.choices[0].message.content:
+                    if (
+                        summary_response.choices
+                        and summary_response.choices[0].message.content
+                    ):
                         final_response = summary_response.choices[0].message.content
                     else:
                         final_response = ""
 
                 if final_response:
                     if "<think>" in final_response:
-                        final_response = re.sub(r'<think>.*?</think>\s*', '', final_response, flags=re.DOTALL).strip()
+                        final_response = re.sub(
+                            r"<think>.*?</think>\s*",
+                            "",
+                            final_response,
+                            flags=re.DOTALL,
+                        ).strip()
                     if final_response:
-                        messages.append({"role": "assistant", "content": final_response})
+                        messages.append(
+                            {"role": "assistant", "content": final_response}
+                        )
                     else:
                         final_response = "I reached the iteration limit and couldn't generate a summary."
                 else:
-                    final_response = "I reached the iteration limit and couldn't generate a summary."
+                    final_response = (
+                        "I reached the iteration limit and couldn't generate a summary."
+                    )
 
         except Exception as e:
             logging.warning(f"Failed to get summary response: {e}")
@@ -5398,7 +6132,7 @@ class AIAgent:
         self._persist_user_message_override = persist_user_message
         # Generate unique task_id if not provided to isolate VMs between concurrent tasks
         effective_task_id = task_id or str(uuid.uuid4())
-        
+
         # Reset retry counters and iteration budget at the start of each turn
         # so subagent usage from a previous turn doesn't eat into the next one.
         self._invalid_tool_retries = 0
@@ -5412,35 +6146,39 @@ class AIAgent:
         # They are initialized in __init__ and must persist across run_conversation
         # calls so that nudge logic accumulates correctly in CLI mode.
         self.iteration_budget = IterationBudget(self.max_iterations)
-        
+
         # Initialize conversation (copy to avoid mutating the caller's list)
         messages = list(conversation_history) if conversation_history else []
-        
+
         # Hydrate todo store from conversation history (gateway creates a fresh
         # AIAgent per message, so the in-memory store is empty -- we need to
         # recover the todo state from the most recent todo tool response in history)
         if conversation_history and not self._todo_store.has_items():
             self._hydrate_todo_store(conversation_history)
-        
+
         # Prefill messages (few-shot priming) are injected at API-call time only,
         # never stored in the messages list. This keeps them ephemeral: they won't
         # be saved to session DB, session logs, or batch trajectories, but they're
         # automatically re-applied on every API call (including session continuations).
-        
+
         # Track user turns for memory flush and periodic nudge logic
         self._user_turn_count += 1
 
         # Preserve the original user message (no nudge injection).
         # Honcho should receive the actual user input, not system nudges.
-        original_user_message = persist_user_message if persist_user_message is not None else user_message
+        original_user_message = (
+            persist_user_message if persist_user_message is not None else user_message
+        )
 
         # Track memory nudge trigger (turn-based, checked here).
         # Skill trigger is checked AFTER the agent loop completes, based on
         # how many tool iterations THIS turn used.
         _should_review_memory = False
-        if (self._memory_nudge_interval > 0
-                and "memory" in self.valid_tool_names
-                and self._memory_store):
+        if (
+            self._memory_nudge_interval > 0
+            and "memory" in self.valid_tool_names
+            and self._memory_store
+        ):
             self._turns_since_memory += 1
             if self._turns_since_memory >= self._memory_nudge_interval:
                 _should_review_memory = True
@@ -5455,7 +6193,9 @@ class AIAgent:
         # to consume background prefetch results from turn N-1.
         self._honcho_context = ""
         self._honcho_turn_context = ""
-        _recall_mode = (self._honcho_config.recall_mode if self._honcho_config else "hybrid")
+        _recall_mode = (
+            self._honcho_config.recall_mode if self._honcho_config else "hybrid"
+        )
         if self._honcho and self._honcho_session_key and _recall_mode != "tools":
             try:
                 prefetched_context = self._honcho_prefetch(original_user_message)
@@ -5472,10 +6212,12 @@ class AIAgent:
         messages.append(user_msg)
         current_turn_user_idx = len(messages) - 1
         self._persist_user_message_idx = current_turn_user_idx
-        
+
         if not self.quiet_mode:
-            self._safe_print(f"💬 Starting conversation: '{user_message[:60]}{'...' if len(user_message) > 60 else ''}'")
-        
+            self._safe_print(
+                f"💬 Starting conversation: '{user_message[:60]}{'...' if len(user_message) > 60 else ''}'"
+            )
+
         # ── System prompt (cached per session for prefix caching) ──
         # Built once on first call, reused for all subsequent calls.
         # Only rebuilt after context compression events (which invalidate
@@ -5513,7 +6255,9 @@ class AIAgent:
                 # Store the system prompt snapshot in SQLite
                 if self._session_db:
                     try:
-                        self._session_db.update_system_prompt(self.session_id, self._cached_system_prompt)
+                        self._session_db.update_system_prompt(
+                            self.session_id, self._cached_system_prompt
+                        )
                     except Exception as e:
                         logger.debug("Session DB update_system_prompt failed: %s", e)
 
@@ -5528,8 +6272,10 @@ class AIAgent:
         # 4xx and abort the request entirely).
         if (
             self.compression_enabled
-            and len(messages) > self.context_compressor.protect_first_n
-                                + self.context_compressor.protect_last_n + 1
+            and len(messages)
+            > self.context_compressor.protect_first_n
+            + self.context_compressor.protect_last_n
+            + 1
         ):
             _sys_tok_est = estimate_tokens_rough(active_system_prompt or "")
             _msg_tok_est = estimate_messages_tokens_rough(messages)
@@ -5553,7 +6299,9 @@ class AIAgent:
                 for _pass in range(3):
                     _orig_len = len(messages)
                     messages, active_system_prompt = self._compress_context(
-                        messages, system_message, approx_tokens=_preflight_tokens,
+                        messages,
+                        system_message,
+                        approx_tokens=_preflight_tokens,
                         task_id=effective_task_id,
                     )
                     if len(messages) >= _orig_len:
@@ -5573,11 +6321,13 @@ class AIAgent:
         length_continue_retries = 0
         truncated_response_prefix = ""
         compression_attempts = 0
-        
+
         # Clear any stale interrupt state at start
         self.clear_interrupt()
-        
-        while api_call_count < self.max_iterations and self.iteration_budget.remaining > 0:
+
+        while (
+            api_call_count < self.max_iterations and self.iteration_budget.remaining > 0
+        ):
             # Reset per-turn checkpoint dedup so each iteration can take one snapshot
             self._checkpoint_mgr.new_turn()
 
@@ -5585,13 +6335,17 @@ class AIAgent:
             if self._interrupt_requested:
                 interrupted = True
                 if not self.quiet_mode:
-                    self._safe_print(f"\n⚡ Breaking out of tool loop due to interrupt...")
+                    self._safe_print(
+                        f"\n⚡ Breaking out of tool loop due to interrupt..."
+                    )
                 break
-            
+
             api_call_count += 1
             if not self.iteration_budget.consume():
                 if not self.quiet_mode:
-                    self._safe_print(f"\n⚠️  Session iteration budget exhausted ({self.iteration_budget.max_total} total across agent + subagents)")
+                    self._safe_print(
+                        f"\n⚠️  Session iteration budget exhausted ({self.iteration_budget.max_total} total across agent + subagents)"
+                    )
                 break
 
             # Fire step_callback for gateway hooks (agent:step event)
@@ -5608,14 +6362,20 @@ class AIAgent:
                             break
                     self.step_callback(api_call_count, prev_tools)
                 except Exception as _step_err:
-                    logger.debug("step_callback error (iteration %s): %s", api_call_count, _step_err)
+                    logger.debug(
+                        "step_callback error (iteration %s): %s",
+                        api_call_count,
+                        _step_err,
+                    )
 
             # Track tool-calling iterations for skill nudge.
             # Counter resets whenever skill_manage is actually used.
-            if (self._skill_nudge_interval > 0
-                    and "skill_manage" in self.valid_tool_names):
+            if (
+                self._skill_nudge_interval > 0
+                and "skill_manage" in self.valid_tool_names
+            ):
                 self._iters_since_skill += 1
-            
+
             # Prepare messages for API call
             # If we have an ephemeral system prompt, prepend it to the messages
             # Note: Reasoning is embedded in content via <think> tags for trajectory storage.
@@ -5625,7 +6385,11 @@ class AIAgent:
             for idx, msg in enumerate(messages):
                 api_msg = msg.copy()
 
-                if idx == current_turn_user_idx and msg.get("role") == "user" and self._honcho_turn_context:
+                if (
+                    idx == current_turn_user_idx
+                    and msg.get("role") == "user"
+                    and self._honcho_turn_context
+                ):
                     api_msg["content"] = _inject_honcho_turn_context(
                         api_msg.get("content", ""), self._honcho_turn_context
                     )
@@ -5661,9 +6425,13 @@ class AIAgent:
             # so the stable cache prefix remains unchanged.
             effective_system = active_system_prompt or ""
             if self.ephemeral_system_prompt:
-                effective_system = (effective_system + "\n\n" + self.ephemeral_system_prompt).strip()
+                effective_system = (
+                    effective_system + "\n\n" + self.ephemeral_system_prompt
+                ).strip()
             if effective_system:
-                api_messages = [{"role": "system", "content": effective_system}] + api_messages
+                api_messages = [
+                    {"role": "system", "content": effective_system}
+                ] + api_messages
 
             # Inject ephemeral prefill messages right after the system prompt
             # but before conversation history. Same API-call-time-only pattern.
@@ -5677,7 +6445,11 @@ class AIAgent:
             # inject cache_control breakpoints (system + last 3 messages) to reduce
             # input token costs by ~75% on multi-turn conversations.
             if self._use_prompt_caching:
-                api_messages = apply_anthropic_cache_control(api_messages, cache_ttl=self._cache_ttl, native_anthropic=(self.api_mode == 'anthropic_messages'))
+                api_messages = apply_anthropic_cache_control(
+                    api_messages,
+                    cache_ttl=self._cache_ttl,
+                    native_anthropic=(self.api_mode == "anthropic_messages"),
+                )
 
             # Safety net: strip orphaned tool results / add stubs for missing
             # results before sending to the API.  Runs unconditionally — not
@@ -5688,14 +6460,20 @@ class AIAgent:
             # Calculate approximate request size for logging
             total_chars = sum(len(str(msg)) for msg in api_messages)
             approx_tokens = total_chars // 4  # Rough estimate: 4 chars per token
-            
+
             # Thinking spinner for quiet mode (animated during API call)
             thinking_spinner = None
-            
+
             if not self.quiet_mode:
-                self._vprint(f"\n{self.log_prefix}🔄 Making API call #{api_call_count}/{self.max_iterations}...")
-                self._vprint(f"{self.log_prefix}   📊 Request size: {len(api_messages)} messages, ~{approx_tokens:,} tokens (~{total_chars:,} chars)")
-                self._vprint(f"{self.log_prefix}   🔧 Available tools: {len(self.tools) if self.tools else 0}")
+                self._vprint(
+                    f"\n{self.log_prefix}🔄 Making API call #{api_call_count}/{self.max_iterations}..."
+                )
+                self._vprint(
+                    f"{self.log_prefix}   📊 Request size: {len(api_messages)} messages, ~{approx_tokens:,} tokens (~{total_chars:,} chars)"
+                )
+                self._vprint(
+                    f"{self.log_prefix}   🔧 Available tools: {len(self.tools) if self.tools else 0}"
+                )
             else:
                 # Animated thinking spinner in quiet mode
                 face = random.choice(KawaiiSpinner.KAWAII_THINKING)
@@ -5707,16 +6485,24 @@ class AIAgent:
                 elif not self._has_stream_consumers():
                     # Raw KawaiiSpinner only when no streaming consumers
                     # (would conflict with streamed token output)
-                    spinner_type = random.choice(['brain', 'sparkle', 'pulse', 'moon', 'star'])
-                    thinking_spinner = KawaiiSpinner(f"{face} {verb}...", spinner_type=spinner_type)
+                    spinner_type = random.choice(
+                        ["brain", "sparkle", "pulse", "moon", "star"]
+                    )
+                    thinking_spinner = KawaiiSpinner(
+                        f"{face} {verb}...", spinner_type=spinner_type
+                    )
                     thinking_spinner.start()
-            
+
             # Log request details if verbose
             if self.verbose_logging:
-                logging.debug(f"API Request - Model: {self.model}, Messages: {len(messages)}, Tools: {len(self.tools) if self.tools else 0}")
-                logging.debug(f"Last message role: {messages[-1]['role'] if messages else 'none'}")
+                logging.debug(
+                    f"API Request - Model: {self.model}, Messages: {len(messages)}, Tools: {len(self.tools) if self.tools else 0}"
+                )
+                logging.debug(
+                    f"Last message role: {messages[-1]['role'] if messages else 'none'}"
+                )
                 logging.debug(f"Total message size: ~{approx_tokens:,} tokens")
-            
+
             api_start_time = time.time()
             retry_count = 0
             max_retries = 3
@@ -5734,9 +6520,16 @@ class AIAgent:
                 try:
                     api_kwargs = self._build_api_kwargs(api_messages)
                     if self.api_mode == "codex_responses":
-                        api_kwargs = self._preflight_codex_api_kwargs(api_kwargs, allow_stream=False)
+                        api_kwargs = self._preflight_codex_api_kwargs(
+                            api_kwargs, allow_stream=False
+                        )
 
-                    if os.getenv("HERMES_DUMP_REQUESTS", "").strip().lower() in {"1", "true", "yes", "on"}:
+                    if os.getenv("HERMES_DUMP_REQUESTS", "").strip().lower() in {
+                        "1",
+                        "true",
+                        "yes",
+                        "on",
+                    }:
                         self._dump_api_request_debug(api_kwargs, reason="preflight")
 
                     if self._has_stream_consumers():
@@ -5755,9 +6548,9 @@ class AIAgent:
                         )
                     else:
                         response = self._interruptible_api_call(api_kwargs)
-                    
+
                     api_duration = time.time() - api_start_time
-                    
+
                     # Stop thinking spinner silently -- the response box or tool
                     # execution messages that follow are more informative.
                     if thinking_spinner:
@@ -5765,20 +6558,30 @@ class AIAgent:
                         thinking_spinner = None
                     if self.thinking_callback:
                         self.thinking_callback("")
-                    
+
                     if not self.quiet_mode:
-                        self._vprint(f"{self.log_prefix}⏱️  API call completed in {api_duration:.2f}s")
-                    
+                        self._vprint(
+                            f"{self.log_prefix}⏱️  API call completed in {api_duration:.2f}s"
+                        )
+
                     if self.verbose_logging:
                         # Log response with provider info if available
-                        resp_model = getattr(response, 'model', 'N/A') if response else 'N/A'
-                        logging.debug(f"API Response received - Model: {resp_model}, Usage: {response.usage if hasattr(response, 'usage') else 'N/A'}")
-                    
+                        resp_model = (
+                            getattr(response, "model", "N/A") if response else "N/A"
+                        )
+                        logging.debug(
+                            f"API Response received - Model: {resp_model}, Usage: {response.usage if hasattr(response, 'usage') else 'N/A'}"
+                        )
+
                     # Validate response shape before proceeding
                     response_invalid = False
                     error_details = []
                     if self.api_mode == "codex_responses":
-                        output_items = getattr(response, "output", None) if response is not None else None
+                        output_items = (
+                            getattr(response, "output", None)
+                            if response is not None
+                            else None
+                        )
                         if response is None:
                             response_invalid = True
                             error_details.append("response is None")
@@ -5789,7 +6592,11 @@ class AIAgent:
                             response_invalid = True
                             error_details.append("response.output is empty")
                     elif self.api_mode == "anthropic_messages":
-                        content_blocks = getattr(response, "content", None) if response is not None else None
+                        content_blocks = (
+                            getattr(response, "content", None)
+                            if response is not None
+                            else None
+                        )
                         if response is None:
                             response_invalid = True
                             error_details.append("response is None")
@@ -5800,12 +6607,19 @@ class AIAgent:
                             response_invalid = True
                             error_details.append("response.content is empty")
                     else:
-                        if response is None or not hasattr(response, 'choices') or response.choices is None or len(response.choices) == 0:
+                        if (
+                            response is None
+                            or not hasattr(response, "choices")
+                            or response.choices is None
+                            or len(response.choices) == 0
+                        ):
                             response_invalid = True
                             if response is None:
                                 error_details.append("response is None")
-                            elif not hasattr(response, 'choices'):
-                                error_details.append("response has no 'choices' attribute")
+                            elif not hasattr(response, "choices"):
+                                error_details.append(
+                                    "response has no 'choices' attribute"
+                                )
                             elif response.choices is None:
                                 error_details.append("response.choices is None")
                             else:
@@ -5818,70 +6632,120 @@ class AIAgent:
                             thinking_spinner = None
                         if self.thinking_callback:
                             self.thinking_callback("")
-                        
+
                         # This is often rate limiting or provider returning malformed response
                         retry_count += 1
-                        
+
                         # Eager fallback: empty/malformed responses are a common
                         # rate-limit symptom.  Switch to fallback immediately
                         # rather than retrying with extended backoff.
-                        if not self._fallback_activated and self._try_activate_fallback():
+                        if (
+                            not self._fallback_activated
+                            and self._try_activate_fallback()
+                        ):
                             retry_count = 0
                             continue
 
                         # Check for error field in response (some providers include this)
                         error_msg = "Unknown"
                         provider_name = "Unknown"
-                        if response and hasattr(response, 'error') and response.error:
+                        if response and hasattr(response, "error") and response.error:
                             error_msg = str(response.error)
                             # Try to extract provider from error metadata
-                            if hasattr(response.error, 'metadata') and response.error.metadata:
-                                provider_name = response.error.metadata.get('provider_name', 'Unknown')
-                        elif response and hasattr(response, 'message') and response.message:
+                            if (
+                                hasattr(response.error, "metadata")
+                                and response.error.metadata
+                            ):
+                                provider_name = response.error.metadata.get(
+                                    "provider_name", "Unknown"
+                                )
+                        elif (
+                            response
+                            and hasattr(response, "message")
+                            and response.message
+                        ):
                             error_msg = str(response.message)
-                        
+
                         # Try to get provider from model field (OpenRouter often returns actual model used)
-                        if provider_name == "Unknown" and response and hasattr(response, 'model') and response.model:
+                        if (
+                            provider_name == "Unknown"
+                            and response
+                            and hasattr(response, "model")
+                            and response.model
+                        ):
                             provider_name = f"model={response.model}"
-                        
+
                         # Check for x-openrouter-provider or similar metadata
                         if provider_name == "Unknown" and response:
                             # Log all response attributes for debugging
-                            resp_attrs = {k: str(v)[:100] for k, v in vars(response).items() if not k.startswith('_')}
+                            resp_attrs = {
+                                k: str(v)[:100]
+                                for k, v in vars(response).items()
+                                if not k.startswith("_")
+                            }
                             if self.verbose_logging:
-                                logging.debug(f"Response attributes for invalid response: {resp_attrs}")
-                        
-                        self._vprint(f"{self.log_prefix}⚠️  Invalid API response (attempt {retry_count}/{max_retries}): {', '.join(error_details)}", force=True)
-                        self._vprint(f"{self.log_prefix}   🏢 Provider: {provider_name}", force=True)
-                        self._vprint(f"{self.log_prefix}   📝 Provider message: {error_msg[:200]}", force=True)
-                        self._vprint(f"{self.log_prefix}   ⏱️  Response time: {api_duration:.2f}s (fast response often indicates rate limiting)", force=True)
-                        
+                                logging.debug(
+                                    f"Response attributes for invalid response: {resp_attrs}"
+                                )
+
+                        self._vprint(
+                            f"{self.log_prefix}⚠️  Invalid API response (attempt {retry_count}/{max_retries}): {', '.join(error_details)}",
+                            force=True,
+                        )
+                        self._vprint(
+                            f"{self.log_prefix}   🏢 Provider: {provider_name}",
+                            force=True,
+                        )
+                        self._vprint(
+                            f"{self.log_prefix}   📝 Provider message: {error_msg[:200]}",
+                            force=True,
+                        )
+                        self._vprint(
+                            f"{self.log_prefix}   ⏱️  Response time: {api_duration:.2f}s (fast response often indicates rate limiting)",
+                            force=True,
+                        )
+
                         if retry_count >= max_retries:
                             # Try fallback before giving up
                             if self._try_activate_fallback():
                                 retry_count = 0
                                 continue
-                            self._vprint(f"{self.log_prefix}❌ Max retries ({max_retries}) exceeded for invalid responses. Giving up.", force=True)
-                            logging.error(f"{self.log_prefix}Invalid API response after {max_retries} retries.")
+                            self._vprint(
+                                f"{self.log_prefix}❌ Max retries ({max_retries}) exceeded for invalid responses. Giving up.",
+                                force=True,
+                            )
+                            logging.error(
+                                f"{self.log_prefix}Invalid API response after {max_retries} retries."
+                            )
                             self._persist_session(messages, conversation_history)
                             return {
                                 "messages": messages,
                                 "completed": False,
                                 "api_calls": api_call_count,
                                 "error": "Invalid API response shape. Likely rate limited or malformed provider response.",
-                                "failed": True  # Mark as failure for filtering
+                                "failed": True,  # Mark as failure for filtering
                             }
-                        
+
                         # Longer backoff for rate limiting (likely cause of None choices)
-                        wait_time = min(5 * (2 ** (retry_count - 1)), 120)  # 5s, 10s, 20s, 40s, 80s, 120s
-                        self._vprint(f"{self.log_prefix}⏳ Retrying in {wait_time}s (extended backoff for possible rate limit)...", force=True)
-                        logging.warning(f"Invalid API response (retry {retry_count}/{max_retries}): {', '.join(error_details)} | Provider: {provider_name}")
-                        
+                        wait_time = min(
+                            5 * (2 ** (retry_count - 1)), 120
+                        )  # 5s, 10s, 20s, 40s, 80s, 120s
+                        self._vprint(
+                            f"{self.log_prefix}⏳ Retrying in {wait_time}s (extended backoff for possible rate limit)...",
+                            force=True,
+                        )
+                        logging.warning(
+                            f"Invalid API response (retry {retry_count}/{max_retries}): {', '.join(error_details)} | Provider: {provider_name}"
+                        )
+
                         # Sleep in small increments to stay responsive to interrupts
                         sleep_end = time.time() + wait_time
                         while time.time() < sleep_end:
                             if self._interrupt_requested:
-                                self._vprint(f"{self.log_prefix}⚡ Interrupt detected during retry wait, aborting.", force=True)
+                                self._vprint(
+                                    f"{self.log_prefix}⚡ Interrupt detected during retry wait, aborting.",
+                                    force=True,
+                                )
                                 self._persist_session(messages, conversation_history)
                                 self.clear_interrupt()
                                 return {
@@ -5897,33 +6761,54 @@ class AIAgent:
                     # Check finish_reason before proceeding
                     if self.api_mode == "codex_responses":
                         status = getattr(response, "status", None)
-                        incomplete_details = getattr(response, "incomplete_details", None)
+                        incomplete_details = getattr(
+                            response, "incomplete_details", None
+                        )
                         incomplete_reason = None
                         if isinstance(incomplete_details, dict):
                             incomplete_reason = incomplete_details.get("reason")
                         else:
-                            incomplete_reason = getattr(incomplete_details, "reason", None)
-                        if status == "incomplete" and incomplete_reason in {"max_output_tokens", "length"}:
+                            incomplete_reason = getattr(
+                                incomplete_details, "reason", None
+                            )
+                        if status == "incomplete" and incomplete_reason in {
+                            "max_output_tokens",
+                            "length",
+                        }:
                             finish_reason = "length"
                         else:
                             finish_reason = "stop"
                     elif self.api_mode == "anthropic_messages":
-                        stop_reason_map = {"end_turn": "stop", "tool_use": "tool_calls", "max_tokens": "length", "stop_sequence": "stop"}
-                        finish_reason = stop_reason_map.get(response.stop_reason, "stop")
+                        stop_reason_map = {
+                            "end_turn": "stop",
+                            "tool_use": "tool_calls",
+                            "max_tokens": "length",
+                            "stop_sequence": "stop",
+                        }
+                        finish_reason = stop_reason_map.get(
+                            response.stop_reason, "stop"
+                        )
                     else:
                         finish_reason = response.choices[0].finish_reason
 
                     if finish_reason == "length":
-                        self._vprint(f"{self.log_prefix}⚠️  Response truncated (finish_reason='length') - model hit max output tokens", force=True)
+                        self._vprint(
+                            f"{self.log_prefix}⚠️  Response truncated (finish_reason='length') - model hit max output tokens",
+                            force=True,
+                        )
 
                         if self.api_mode == "chat_completions":
                             assistant_message = response.choices[0].message
                             if not assistant_message.tool_calls:
                                 length_continue_retries += 1
-                                interim_msg = self._build_assistant_message(assistant_message, finish_reason)
+                                interim_msg = self._build_assistant_message(
+                                    assistant_message, finish_reason
+                                )
                                 messages.append(interim_msg)
                                 if assistant_message.content:
-                                    truncated_response_prefix += assistant_message.content
+                                    truncated_response_prefix += (
+                                        assistant_message.content
+                                    )
 
                                 if length_continue_retries < 3:
                                     self._vprint(
@@ -5944,7 +6829,9 @@ class AIAgent:
                                     restart_with_length_continuation = True
                                     break
 
-                                partial_response = self._strip_think_blocks(truncated_response_prefix).strip()
+                                partial_response = self._strip_think_blocks(
+                                    truncated_response_prefix
+                                ).strip()
                                 self._cleanup_task_resources(effective_task_id)
                                 self._persist_session(messages, conversation_history)
                                 return {
@@ -5958,8 +6845,12 @@ class AIAgent:
 
                         # If we have prior messages, roll back to last complete state
                         if len(messages) > 1:
-                            self._vprint(f"{self.log_prefix}   ⏪ Rolling back to last complete assistant turn")
-                            rolled_back_messages = self._get_messages_up_to_last_assistant(messages)
+                            self._vprint(
+                                f"{self.log_prefix}   ⏪ Rolling back to last complete assistant turn"
+                            )
+                            rolled_back_messages = (
+                                self._get_messages_up_to_last_assistant(messages)
+                            )
 
                             self._cleanup_task_resources(effective_task_id)
                             self._persist_session(messages, conversation_history)
@@ -5970,11 +6861,14 @@ class AIAgent:
                                 "api_calls": api_call_count,
                                 "completed": False,
                                 "partial": True,
-                                "error": "Response truncated due to output length limit"
+                                "error": "Response truncated due to output length limit",
                             }
                         else:
                             # First message was truncated - mark as failed
-                            self._vprint(f"{self.log_prefix}❌ First response truncated - cannot recover", force=True)
+                            self._vprint(
+                                f"{self.log_prefix}❌ First response truncated - cannot recover",
+                                force=True,
+                            )
                             self._persist_session(messages, conversation_history)
                             return {
                                 "final_response": None,
@@ -5982,11 +6876,11 @@ class AIAgent:
                                 "api_calls": api_call_count,
                                 "completed": False,
                                 "failed": True,
-                                "error": "First response truncated due to output length limit"
+                                "error": "First response truncated due to output length limit",
                             }
-                    
+
                     # Track actual token usage from response for context management
-                    if hasattr(response, 'usage') and response.usage:
+                    if hasattr(response, "usage") and response.usage:
                         canonical_usage = normalize_usage(
                             response.usage,
                             provider=self.provider,
@@ -6006,7 +6900,9 @@ class AIAgent:
                         if self.context_compressor._context_probed:
                             ctx = self.context_compressor.context_length
                             save_context_length(self.model, self.base_url, ctx)
-                            self._safe_print(f"{self.log_prefix}💾 Cached context length: {ctx:,} tokens for {self.model}")
+                            self._safe_print(
+                                f"{self.log_prefix}💾 Cached context length: {ctx:,} tokens for {self.model}"
+                            )
                             self.context_compressor._context_probed = False
 
                         self.session_prompt_tokens += prompt_tokens
@@ -6015,9 +6911,15 @@ class AIAgent:
                         self.session_api_calls += 1
                         self.session_input_tokens += canonical_usage.input_tokens
                         self.session_output_tokens += canonical_usage.output_tokens
-                        self.session_cache_read_tokens += canonical_usage.cache_read_tokens
-                        self.session_cache_write_tokens += canonical_usage.cache_write_tokens
-                        self.session_reasoning_tokens += canonical_usage.reasoning_tokens
+                        self.session_cache_read_tokens += (
+                            canonical_usage.cache_read_tokens
+                        )
+                        self.session_cache_write_tokens += (
+                            canonical_usage.cache_write_tokens
+                        )
+                        self.session_reasoning_tokens += (
+                            canonical_usage.reasoning_tokens
+                        )
 
                         cost_result = estimate_usage_cost(
                             self.model,
@@ -6027,7 +6929,9 @@ class AIAgent:
                             api_key=getattr(self, "api_key", ""),
                         )
                         if cost_result.amount_usd is not None:
-                            self.session_estimated_cost_usd += float(cost_result.amount_usd)
+                            self.session_estimated_cost_usd += float(
+                                cost_result.amount_usd
+                            )
                         self.session_cost_status = cost_result.status
                         self.session_cost_source = cost_result.source
 
@@ -6035,8 +6939,11 @@ class AIAgent:
                         # Gateway sessions persist via session_store.update_session()
                         # after run_conversation returns, so only persist here for
                         # CLI (and other non-gateway) platforms to avoid double-counting.
-                        if (self._session_db and self.session_id
-                                and getattr(self, 'platform', None) == 'cli'):
+                        if (
+                            self._session_db
+                            and self.session_id
+                            and getattr(self, "platform", None) == "cli"
+                        ):
                             try:
                                 self._session_db.update_token_counts(
                                     self.session_id,
@@ -6046,37 +6953,63 @@ class AIAgent:
                                     cache_write_tokens=canonical_usage.cache_write_tokens,
                                     reasoning_tokens=canonical_usage.reasoning_tokens,
                                     estimated_cost_usd=float(cost_result.amount_usd)
-                                    if cost_result.amount_usd is not None else None,
+                                    if cost_result.amount_usd is not None
+                                    else None,
                                     cost_status=cost_result.status,
                                     cost_source=cost_result.source,
                                     billing_provider=self.provider,
                                     billing_base_url=self.base_url,
                                     billing_mode="subscription_included"
-                                    if cost_result.status == "included" else None,
+                                    if cost_result.status == "included"
+                                    else None,
                                     model=self.model,
                                 )
                             except Exception:
                                 pass  # never block the agent loop
-                        
+
                         if self.verbose_logging:
-                            logging.debug(f"Token usage: prompt={usage_dict['prompt_tokens']:,}, completion={usage_dict['completion_tokens']:,}, total={usage_dict['total_tokens']:,}")
-                        
+                            logging.debug(
+                                f"Token usage: prompt={usage_dict['prompt_tokens']:,}, completion={usage_dict['completion_tokens']:,}, total={usage_dict['total_tokens']:,}"
+                            )
+
                         # Log cache hit stats when prompt caching is active
                         if self._use_prompt_caching:
                             if self.api_mode == "anthropic_messages":
                                 # Anthropic uses cache_read_input_tokens / cache_creation_input_tokens
-                                cached = getattr(response.usage, 'cache_read_input_tokens', 0) or 0
-                                written = getattr(response.usage, 'cache_creation_input_tokens', 0) or 0
+                                cached = (
+                                    getattr(
+                                        response.usage, "cache_read_input_tokens", 0
+                                    )
+                                    or 0
+                                )
+                                written = (
+                                    getattr(
+                                        response.usage, "cache_creation_input_tokens", 0
+                                    )
+                                    or 0
+                                )
                             else:
                                 # OpenRouter uses prompt_tokens_details.cached_tokens
-                                details = getattr(response.usage, 'prompt_tokens_details', None)
-                                cached = getattr(details, 'cached_tokens', 0) or 0 if details else 0
-                                written = getattr(details, 'cache_write_tokens', 0) or 0 if details else 0
+                                details = getattr(
+                                    response.usage, "prompt_tokens_details", None
+                                )
+                                cached = (
+                                    getattr(details, "cached_tokens", 0) or 0
+                                    if details
+                                    else 0
+                                )
+                                written = (
+                                    getattr(details, "cache_write_tokens", 0) or 0
+                                    if details
+                                    else 0
+                                )
                             prompt = usage_dict["prompt_tokens"]
                             hit_pct = (cached / prompt * 100) if prompt > 0 else 0
                             if not self.quiet_mode:
-                                self._vprint(f"{self.log_prefix}   💾 Cache: {cached:,}/{prompt:,} tokens ({hit_pct:.0f}% hit, {written:,} written)")
-                    
+                                self._vprint(
+                                    f"{self.log_prefix}   💾 Cache: {cached:,}/{prompt:,} tokens ({hit_pct:.0f}% hit, {written:,} written)"
+                                )
+
                     break  # Success, exit retry loop
 
                 except InterruptedError:
@@ -6086,7 +7019,9 @@ class AIAgent:
                     if self.thinking_callback:
                         self.thinking_callback("")
                     api_elapsed = time.time() - api_start_time
-                    self._vprint(f"{self.log_prefix}⚡ Interrupted during API call.", force=True)
+                    self._vprint(
+                        f"{self.log_prefix}⚡ Interrupted during API call.", force=True
+                    )
                     self._persist_session(messages, conversation_history)
                     interrupted = True
                     final_response = f"Operation interrupted: waiting for model response ({api_elapsed:.1f}s elapsed)."
@@ -6109,7 +7044,9 @@ class AIAgent:
                     ):
                         codex_auth_retry_attempted = True
                         if self._try_refresh_codex_client_credentials(force=True):
-                            self._vprint(f"{self.log_prefix}🔐 Codex auth refreshed after 401. Retrying request...")
+                            self._vprint(
+                                f"{self.log_prefix}🔐 Codex auth refreshed after 401. Retrying request..."
+                            )
                             continue
                     if (
                         self.api_mode == "chat_completions"
@@ -6119,36 +7056,63 @@ class AIAgent:
                     ):
                         nous_auth_retry_attempted = True
                         if self._try_refresh_nous_client_credentials(force=True):
-                            print(f"{self.log_prefix}🔐 Nous agent key refreshed after 401. Retrying request...")
+                            print(
+                                f"{self.log_prefix}🔐 Nous agent key refreshed after 401. Retrying request..."
+                            )
                             continue
                     if (
                         self.api_mode == "anthropic_messages"
                         and status_code == 401
-                        and hasattr(self, '_anthropic_api_key')
+                        and hasattr(self, "_anthropic_api_key")
                         and not anthropic_auth_retry_attempted
                     ):
                         anthropic_auth_retry_attempted = True
                         from agent.anthropic_adapter import _is_oauth_token
+
                         if self._try_refresh_anthropic_client_credentials():
-                            print(f"{self.log_prefix}🔐 Anthropic credentials refreshed after 401. Retrying request...")
+                            print(
+                                f"{self.log_prefix}🔐 Anthropic credentials refreshed after 401. Retrying request..."
+                            )
                             continue
                         # Credential refresh didn't help — show diagnostic info
                         key = self._anthropic_api_key
-                        auth_method = "Bearer (OAuth/setup-token)" if _is_oauth_token(key) else "x-api-key (API key)"
-                        print(f"{self.log_prefix}🔐 Anthropic 401 — authentication failed.")
+                        auth_method = (
+                            "Bearer (OAuth/setup-token)"
+                            if _is_oauth_token(key)
+                            else "x-api-key (API key)"
+                        )
+                        print(
+                            f"{self.log_prefix}🔐 Anthropic 401 — authentication failed."
+                        )
                         print(f"{self.log_prefix}   Auth method: {auth_method}")
-                        print(f"{self.log_prefix}   Token prefix: {key[:12]}..." if key and len(key) > 12 else f"{self.log_prefix}   Token: (empty or short)")
+                        print(
+                            f"{self.log_prefix}   Token prefix: {key[:12]}..."
+                            if key and len(key) > 12
+                            else f"{self.log_prefix}   Token: (empty or short)"
+                        )
                         print(f"{self.log_prefix}   Troubleshooting:")
-                        print(f"{self.log_prefix}     • Check ANTHROPIC_TOKEN in ~/.hermes/.env for Hermes-managed OAuth/setup tokens")
-                        print(f"{self.log_prefix}     • Check ANTHROPIC_API_KEY in ~/.hermes/.env for API keys or legacy token values")
-                        print(f"{self.log_prefix}     • For API keys: verify at https://console.anthropic.com/settings/keys")
-                        print(f"{self.log_prefix}     • For Claude Code: run 'claude /login' to refresh, then retry")
-                        print(f"{self.log_prefix}     • Clear stale keys: hermes config set ANTHROPIC_TOKEN \"\"")
-                        print(f"{self.log_prefix}     • Legacy cleanup: hermes config set ANTHROPIC_API_KEY \"\"")
+                        print(
+                            f"{self.log_prefix}     • Check ANTHROPIC_TOKEN in ~/.hermes/.env for Hermes-managed OAuth/setup tokens"
+                        )
+                        print(
+                            f"{self.log_prefix}     • Check ANTHROPIC_API_KEY in ~/.hermes/.env for API keys or legacy token values"
+                        )
+                        print(
+                            f"{self.log_prefix}     • For API keys: verify at https://console.anthropic.com/settings/keys"
+                        )
+                        print(
+                            f"{self.log_prefix}     • For Claude Code: run 'claude /login' to refresh, then retry"
+                        )
+                        print(
+                            f'{self.log_prefix}     • Clear stale keys: hermes config set ANTHROPIC_TOKEN ""'
+                        )
+                        print(
+                            f'{self.log_prefix}     • Legacy cleanup: hermes config set ANTHROPIC_API_KEY ""'
+                        )
 
                     retry_count += 1
                     elapsed_time = time.time() - api_start_time
-                    
+
                     # Enhanced error logging
                     error_type = type(api_error).__name__
                     error_msg = str(api_error).lower()
@@ -6164,15 +7128,31 @@ class AIAgent:
                     _provider = getattr(self, "provider", "unknown")
                     _base = getattr(self, "base_url", "unknown")
                     _model = getattr(self, "model", "unknown")
-                    self._vprint(f"{self.log_prefix}⚠️  API call failed (attempt {retry_count}/{max_retries}): {error_type}", force=True)
-                    self._vprint(f"{self.log_prefix}   🔌 Provider: {_provider}  Model: {_model}", force=True)
-                    self._vprint(f"{self.log_prefix}   🌐 Endpoint: {_base}", force=True)
-                    self._vprint(f"{self.log_prefix}   📝 Error: {str(api_error)[:200]}", force=True)
-                    self._vprint(f"{self.log_prefix}   ⏱️  Elapsed: {elapsed_time:.2f}s  Context: {len(api_messages)} msgs, ~{approx_tokens:,} tokens")
-                    
+                    self._vprint(
+                        f"{self.log_prefix}⚠️  API call failed (attempt {retry_count}/{max_retries}): {error_type}",
+                        force=True,
+                    )
+                    self._vprint(
+                        f"{self.log_prefix}   🔌 Provider: {_provider}  Model: {_model}",
+                        force=True,
+                    )
+                    self._vprint(
+                        f"{self.log_prefix}   🌐 Endpoint: {_base}", force=True
+                    )
+                    self._vprint(
+                        f"{self.log_prefix}   📝 Error: {str(api_error)[:200]}",
+                        force=True,
+                    )
+                    self._vprint(
+                        f"{self.log_prefix}   ⏱️  Elapsed: {elapsed_time:.2f}s  Context: {len(api_messages)} msgs, ~{approx_tokens:,} tokens"
+                    )
+
                     # Check for interrupt before deciding to retry
                     if self._interrupt_requested:
-                        self._vprint(f"{self.log_prefix}⚡ Interrupt detected during error handling, aborting retries.", force=True)
+                        self._vprint(
+                            f"{self.log_prefix}⚡ Interrupt detected during error handling, aborting retries.",
+                            force=True,
+                        )
                         self._persist_session(messages, conversation_history)
                         self.clear_interrupt()
                         return {
@@ -6182,7 +7162,7 @@ class AIAgent:
                             "completed": False,
                             "interrupted": True,
                         }
-                    
+
                     # Check for 413 payload-too-large BEFORE generic 4xx handler.
                     # A 413 is a payload-size error — the correct response is to
                     # compress history and retry, not abort immediately.
@@ -6207,60 +7187,84 @@ class AIAgent:
 
                     is_payload_too_large = (
                         status_code == 413
-                        or 'request entity too large' in error_msg
-                        or 'payload too large' in error_msg
-                        or 'error code: 413' in error_msg
+                        or "request entity too large" in error_msg
+                        or "payload too large" in error_msg
+                        or "error code: 413" in error_msg
                     )
 
                     if is_payload_too_large:
                         compression_attempts += 1
                         if compression_attempts > max_compression_attempts:
-                            self._vprint(f"{self.log_prefix}❌ Max compression attempts ({max_compression_attempts}) reached for payload-too-large error.", force=True)
-                            logging.error(f"{self.log_prefix}413 compression failed after {max_compression_attempts} attempts.")
+                            self._vprint(
+                                f"{self.log_prefix}❌ Max compression attempts ({max_compression_attempts}) reached for payload-too-large error.",
+                                force=True,
+                            )
+                            logging.error(
+                                f"{self.log_prefix}413 compression failed after {max_compression_attempts} attempts."
+                            )
                             self._persist_session(messages, conversation_history)
                             return {
                                 "messages": messages,
                                 "completed": False,
                                 "api_calls": api_call_count,
                                 "error": f"Request payload too large: max compression attempts ({max_compression_attempts}) reached.",
-                                "partial": True
+                                "partial": True,
                             }
-                        self._vprint(f"{self.log_prefix}⚠️  Request payload too large (413) — compression attempt {compression_attempts}/{max_compression_attempts}...")
+                        self._vprint(
+                            f"{self.log_prefix}⚠️  Request payload too large (413) — compression attempt {compression_attempts}/{max_compression_attempts}..."
+                        )
 
                         original_len = len(messages)
                         messages, active_system_prompt = self._compress_context(
-                            messages, system_message, approx_tokens=approx_tokens,
+                            messages,
+                            system_message,
+                            approx_tokens=approx_tokens,
                             task_id=effective_task_id,
                         )
 
                         if len(messages) < original_len:
-                            self._vprint(f"{self.log_prefix}   🗜️  Compressed {original_len} → {len(messages)} messages, retrying...")
+                            self._vprint(
+                                f"{self.log_prefix}   🗜️  Compressed {original_len} → {len(messages)} messages, retrying..."
+                            )
                             time.sleep(2)  # Brief pause between compression retries
                             restart_with_compressed_messages = True
                             break
                         else:
-                            self._vprint(f"{self.log_prefix}❌ Payload too large and cannot compress further.", force=True)
-                            logging.error(f"{self.log_prefix}413 payload too large. Cannot compress further.")
+                            self._vprint(
+                                f"{self.log_prefix}❌ Payload too large and cannot compress further.",
+                                force=True,
+                            )
+                            logging.error(
+                                f"{self.log_prefix}413 payload too large. Cannot compress further."
+                            )
                             self._persist_session(messages, conversation_history)
                             return {
                                 "messages": messages,
                                 "completed": False,
                                 "api_calls": api_call_count,
                                 "error": "Request payload too large (413). Cannot compress further.",
-                                "partial": True
+                                "partial": True,
                             }
 
                     # Check for context-length errors BEFORE generic 4xx handler.
                     # Local backends (LM Studio, Ollama, llama.cpp) often return
                     # HTTP 400 with messages like "Context size has been exceeded"
                     # which must trigger compression, not an immediate abort.
-                    is_context_length_error = any(phrase in error_msg for phrase in [
-                        'context length', 'context size', 'maximum context',
-                        'token limit', 'too many tokens', 'reduce the length',
-                        'exceeds the limit', 'context window',
-                        'request entity too large',  # OpenRouter/Nous 413 safety net
-                        'prompt is too long',  # Anthropic: "prompt is too long: N tokens > M maximum"
-                    ])
+                    is_context_length_error = any(
+                        phrase in error_msg
+                        for phrase in [
+                            "context length",
+                            "context size",
+                            "maximum context",
+                            "token limit",
+                            "too many tokens",
+                            "reduce the length",
+                            "exceeds the limit",
+                            "context window",
+                            "request entity too large",  # OpenRouter/Nous 413 safety net
+                            "prompt is too long",  # Anthropic: "prompt is too long: N tokens > M maximum"
+                        ]
+                    )
 
                     # Fallback heuristic: Anthropic sometimes returns a generic
                     # 400 invalid_request_error with just "Error" as the message
@@ -6271,9 +7275,17 @@ class AIAgent:
                     # each failed message gets persisted, making the session even
                     # larger. (#1630)
                     if not is_context_length_error and status_code == 400:
-                        ctx_len = getattr(getattr(self, 'context_compressor', None), 'context_length', 200000)
-                        is_large_session = approx_tokens > ctx_len * 0.4 or len(api_messages) > 80
-                        is_generic_error = len(error_msg.strip()) < 30  # e.g. just "error"
+                        ctx_len = getattr(
+                            getattr(self, "context_compressor", None),
+                            "context_length",
+                            200000,
+                        )
+                        is_large_session = (
+                            approx_tokens > ctx_len * 0.4 or len(api_messages) > 80
+                        )
+                        is_generic_error = (
+                            len(error_msg.strip()) < 30
+                        )  # e.g. just "error"
                         if is_large_session and is_generic_error:
                             is_context_length_error = True
                             self._vprint(
@@ -6282,7 +7294,7 @@ class AIAgent:
                                 f"treating as probable context overflow.",
                                 force=True,
                             )
-                    
+
                     if is_context_length_error:
                         compressor = self.context_compressor
                         old_ctx = compressor.context_length
@@ -6291,57 +7303,91 @@ class AIAgent:
                         parsed_limit = parse_context_limit_from_error(error_msg)
                         if parsed_limit and parsed_limit < old_ctx:
                             new_ctx = parsed_limit
-                            self._vprint(f"{self.log_prefix}⚠️  Context limit detected from API: {new_ctx:,} tokens (was {old_ctx:,})", force=True)
+                            self._vprint(
+                                f"{self.log_prefix}⚠️  Context limit detected from API: {new_ctx:,} tokens (was {old_ctx:,})",
+                                force=True,
+                            )
                         else:
                             # Step down to the next probe tier
                             new_ctx = get_next_probe_tier(old_ctx)
 
                         if new_ctx and new_ctx < old_ctx:
                             compressor.context_length = new_ctx
-                            compressor.threshold_tokens = int(new_ctx * compressor.threshold_percent)
+                            compressor.threshold_tokens = int(
+                                new_ctx * compressor.threshold_percent
+                            )
                             compressor._context_probed = True
-                            self._vprint(f"{self.log_prefix}⚠️  Context length exceeded — stepping down: {old_ctx:,} → {new_ctx:,} tokens", force=True)
+                            self._vprint(
+                                f"{self.log_prefix}⚠️  Context length exceeded — stepping down: {old_ctx:,} → {new_ctx:,} tokens",
+                                force=True,
+                            )
                         else:
-                            self._vprint(f"{self.log_prefix}⚠️  Context length exceeded at minimum tier — attempting compression...", force=True)
+                            self._vprint(
+                                f"{self.log_prefix}⚠️  Context length exceeded at minimum tier — attempting compression...",
+                                force=True,
+                            )
 
                         compression_attempts += 1
                         if compression_attempts > max_compression_attempts:
-                            self._vprint(f"{self.log_prefix}❌ Max compression attempts ({max_compression_attempts}) reached.", force=True)
-                            logging.error(f"{self.log_prefix}Context compression failed after {max_compression_attempts} attempts.")
+                            self._vprint(
+                                f"{self.log_prefix}❌ Max compression attempts ({max_compression_attempts}) reached.",
+                                force=True,
+                            )
+                            logging.error(
+                                f"{self.log_prefix}Context compression failed after {max_compression_attempts} attempts."
+                            )
                             self._persist_session(messages, conversation_history)
                             return {
                                 "messages": messages,
                                 "completed": False,
                                 "api_calls": api_call_count,
                                 "error": f"Context length exceeded: max compression attempts ({max_compression_attempts}) reached.",
-                                "partial": True
+                                "partial": True,
                             }
-                        self._vprint(f"{self.log_prefix}   🗜️  Context compression attempt {compression_attempts}/{max_compression_attempts}...")
+                        self._vprint(
+                            f"{self.log_prefix}   🗜️  Context compression attempt {compression_attempts}/{max_compression_attempts}..."
+                        )
 
                         original_len = len(messages)
                         messages, active_system_prompt = self._compress_context(
-                            messages, system_message, approx_tokens=approx_tokens,
+                            messages,
+                            system_message,
+                            approx_tokens=approx_tokens,
                             task_id=effective_task_id,
                         )
 
-                        if len(messages) < original_len or new_ctx and new_ctx < old_ctx:
+                        if (
+                            len(messages) < original_len
+                            or new_ctx
+                            and new_ctx < old_ctx
+                        ):
                             if len(messages) < original_len:
-                                self._vprint(f"{self.log_prefix}   🗜️  Compressed {original_len} → {len(messages)} messages, retrying...")
+                                self._vprint(
+                                    f"{self.log_prefix}   🗜️  Compressed {original_len} → {len(messages)} messages, retrying..."
+                                )
                             time.sleep(2)  # Brief pause between compression retries
                             restart_with_compressed_messages = True
                             break
                         else:
                             # Can't compress further and already at minimum tier
-                            self._vprint(f"{self.log_prefix}❌ Context length exceeded and cannot compress further.", force=True)
-                            self._vprint(f"{self.log_prefix}   💡 The conversation has accumulated too much content.", force=True)
-                            logging.error(f"{self.log_prefix}Context length exceeded: {approx_tokens:,} tokens. Cannot compress further.")
+                            self._vprint(
+                                f"{self.log_prefix}❌ Context length exceeded and cannot compress further.",
+                                force=True,
+                            )
+                            self._vprint(
+                                f"{self.log_prefix}   💡 The conversation has accumulated too much content.",
+                                force=True,
+                            )
+                            logging.error(
+                                f"{self.log_prefix}Context length exceeded: {approx_tokens:,} tokens. Cannot compress further."
+                            )
                             self._persist_session(messages, conversation_history)
                             return {
                                 "messages": messages,
                                 "completed": False,
                                 "api_calls": api_call_count,
                                 "error": f"Context length exceeded ({approx_tokens:,} tokens). Cannot compress further.",
-                                "partial": True
+                                "partial": True,
                             }
 
                     # Check for non-retryable client errors (4xx HTTP status codes).
@@ -6353,21 +7399,50 @@ class AIAgent:
                     # Also catch local validation errors (ValueError, TypeError) — these
                     # are programming bugs, not transient failures.
                     _RETRYABLE_STATUS_CODES = {413, 429, 529}
-                    is_local_validation_error = isinstance(api_error, (ValueError, TypeError))
+                    is_local_validation_error = isinstance(
+                        api_error, (ValueError, TypeError)
+                    )
                     # Detect generic 400s from Anthropic OAuth (transient server-side failures).
                     # Real invalid_request_error responses include a descriptive message;
                     # transient ones contain only "Error" or are empty. (ref: issue #1608)
                     _err_body = getattr(api_error, "body", None) or {}
-                    _err_message = (_err_body.get("error", {}).get("message", "") if isinstance(_err_body, dict) else "")
-                    _is_generic_400 = (status_code == 400 and _err_message.strip().lower() in ("error", ""))
-                    is_client_status_error = isinstance(status_code, int) and 400 <= status_code < 500 and status_code not in _RETRYABLE_STATUS_CODES and not _is_generic_400
-                    is_client_error = (is_local_validation_error or is_client_status_error or any(phrase in error_msg for phrase in [
-                        'error code: 401', 'error code: 403',
-                        'error code: 404', 'error code: 422',
-                        'is not a valid model', 'invalid model', 'model not found',
-                        'invalid api key', 'invalid_api_key', 'authentication',
-                        'unauthorized', 'forbidden', 'not found',
-                    ])) and not is_context_length_error
+                    _err_message = (
+                        _err_body.get("error", {}).get("message", "")
+                        if isinstance(_err_body, dict)
+                        else ""
+                    )
+                    _is_generic_400 = (
+                        status_code == 400
+                        and _err_message.strip().lower() in ("error", "")
+                    )
+                    is_client_status_error = (
+                        isinstance(status_code, int)
+                        and 400 <= status_code < 500
+                        and status_code not in _RETRYABLE_STATUS_CODES
+                        and not _is_generic_400
+                    )
+                    is_client_error = (
+                        is_local_validation_error
+                        or is_client_status_error
+                        or any(
+                            phrase in error_msg
+                            for phrase in [
+                                "error code: 401",
+                                "error code: 403",
+                                "error code: 404",
+                                "error code: 422",
+                                "is not a valid model",
+                                "invalid model",
+                                "model not found",
+                                "invalid api key",
+                                "invalid_api_key",
+                                "authentication",
+                                "unauthorized",
+                                "forbidden",
+                                "not found",
+                            ]
+                        )
+                    ) and not is_context_length_error
 
                     if is_client_error:
                         # Try fallback before aborting — a different provider
@@ -6376,27 +7451,61 @@ class AIAgent:
                             retry_count = 0
                             continue
                         self._dump_api_request_debug(
-                            api_kwargs, reason="non_retryable_client_error", error=api_error,
+                            api_kwargs,
+                            reason="non_retryable_client_error",
+                            error=api_error,
                         )
-                        self._vprint(f"{self.log_prefix}❌ Non-retryable client error (HTTP {status_code}). Aborting.", force=True)
-                        self._vprint(f"{self.log_prefix}   🔌 Provider: {_provider}  Model: {_model}", force=True)
-                        self._vprint(f"{self.log_prefix}   🌐 Endpoint: {_base}", force=True)
+                        self._vprint(
+                            f"{self.log_prefix}❌ Non-retryable client error (HTTP {status_code}). Aborting.",
+                            force=True,
+                        )
+                        self._vprint(
+                            f"{self.log_prefix}   🔌 Provider: {_provider}  Model: {_model}",
+                            force=True,
+                        )
+                        self._vprint(
+                            f"{self.log_prefix}   🌐 Endpoint: {_base}", force=True
+                        )
                         # Actionable guidance for common auth errors
-                        if status_code in (401, 403) or "unauthorized" in error_msg or "forbidden" in error_msg or "permission" in error_msg:
-                            self._vprint(f"{self.log_prefix}   💡 Your API key was rejected by the provider. Check:", force=True)
-                            self._vprint(f"{self.log_prefix}      • Is the key valid? Run: hermes setup", force=True)
-                            self._vprint(f"{self.log_prefix}      • Does your account have access to {_model}?", force=True)
+                        if (
+                            status_code in (401, 403)
+                            or "unauthorized" in error_msg
+                            or "forbidden" in error_msg
+                            or "permission" in error_msg
+                        ):
+                            self._vprint(
+                                f"{self.log_prefix}   💡 Your API key was rejected by the provider. Check:",
+                                force=True,
+                            )
+                            self._vprint(
+                                f"{self.log_prefix}      • Is the key valid? Run: hermes setup",
+                                force=True,
+                            )
+                            self._vprint(
+                                f"{self.log_prefix}      • Does your account have access to {_model}?",
+                                force=True,
+                            )
                             if "openrouter" in str(_base).lower():
-                                self._vprint(f"{self.log_prefix}      • Check credits: https://openrouter.ai/settings/credits", force=True)
+                                self._vprint(
+                                    f"{self.log_prefix}      • Check credits: https://openrouter.ai/settings/credits",
+                                    force=True,
+                                )
                         else:
-                            self._vprint(f"{self.log_prefix}   💡 This type of error won't be fixed by retrying.", force=True)
-                        logging.error(f"{self.log_prefix}Non-retryable client error: {api_error}")
+                            self._vprint(
+                                f"{self.log_prefix}   💡 This type of error won't be fixed by retrying.",
+                                force=True,
+                            )
+                        logging.error(
+                            f"{self.log_prefix}Non-retryable client error: {api_error}"
+                        )
                         # Skip session persistence when the error is likely
                         # context-overflow related (status 400 + large session).
                         # Persisting the failed user message would make the
                         # session even larger, causing the same failure on the
                         # next attempt. (#1630)
-                        if status_code == 400 and (approx_tokens > 50000 or len(api_messages) > 80):
+                        if status_code == 400 and (
+                            approx_tokens > 50000 or len(api_messages) > 80
+                        ):
                             self._vprint(
                                 f"{self.log_prefix}⚠️  Skipping session persistence "
                                 f"for large failed session to prevent growth loop.",
@@ -6418,12 +7527,21 @@ class AIAgent:
                         if self._try_activate_fallback():
                             retry_count = 0
                             continue
-                        self._vprint(f"{self.log_prefix}❌ Max retries ({max_retries}) exceeded. Giving up.", force=True)
-                        logging.error(f"{self.log_prefix}API call failed after {max_retries} retries. Last error: {api_error}")
-                        logging.error(f"{self.log_prefix}Request details - Messages: {len(api_messages)}, Approx tokens: {approx_tokens:,}")
+                        self._vprint(
+                            f"{self.log_prefix}❌ Max retries ({max_retries}) exceeded. Giving up.",
+                            force=True,
+                        )
+                        logging.error(
+                            f"{self.log_prefix}API call failed after {max_retries} retries. Last error: {api_error}"
+                        )
+                        logging.error(
+                            f"{self.log_prefix}Request details - Messages: {len(api_messages)}, Approx tokens: {approx_tokens:,}"
+                        )
                         raise api_error
 
-                    wait_time = min(2 ** retry_count, 60)  # Exponential backoff: 2s, 4s, 8s, 16s, 32s, 60s, 60s
+                    wait_time = min(
+                        2**retry_count, 60
+                    )  # Exponential backoff: 2s, 4s, 8s, 16s, 32s, 60s, 60s
                     logger.warning(
                         "Retrying API call in %ss (attempt %s/%s) %s error=%s",
                         wait_time,
@@ -6437,7 +7555,10 @@ class AIAgent:
                     sleep_end = time.time() + wait_time
                     while time.time() < sleep_end:
                         if self._interrupt_requested:
-                            self._vprint(f"{self.log_prefix}⚡ Interrupt detected during retry wait, aborting.", force=True)
+                            self._vprint(
+                                f"{self.log_prefix}⚡ Interrupt detected during retry wait, aborting.",
+                                force=True,
+                            )
                             self._persist_session(messages, conversation_history)
                             self.clear_interrupt()
                             return {
@@ -6448,7 +7569,7 @@ class AIAgent:
                                 "interrupted": True,
                             }
                         time.sleep(0.2)  # Check interrupt every 200ms
-            
+
             # If the API call was interrupted, skip response processing
             if interrupted:
                 break
@@ -6465,28 +7586,40 @@ class AIAgent:
             # (e.g. repeated context-length errors that exhausted retry_count),
             # the `response` variable is still None. Break out cleanly.
             if response is None:
-                print(f"{self.log_prefix}❌ All API retries exhausted with no successful response.")
+                print(
+                    f"{self.log_prefix}❌ All API retries exhausted with no successful response."
+                )
                 self._persist_session(messages, conversation_history)
                 break
 
             try:
                 if self.api_mode == "codex_responses":
-                    assistant_message, finish_reason = self._normalize_codex_response(response)
+                    assistant_message, finish_reason = self._normalize_codex_response(
+                        response
+                    )
                 elif self.api_mode == "anthropic_messages":
                     from agent.anthropic_adapter import normalize_anthropic_response
+
                     assistant_message, finish_reason = normalize_anthropic_response(
-                        response, strip_tool_prefix=getattr(self, "_is_anthropic_oauth", False)
+                        response,
+                        strip_tool_prefix=getattr(self, "_is_anthropic_oauth", False),
                     )
                 else:
                     assistant_message = response.choices[0].message
-                
+
                 # Normalize content to string — some OpenAI-compatible servers
                 # (llama-server, etc.) return content as a dict or list instead
                 # of a plain string, which crashes downstream .strip() calls.
-                if assistant_message.content is not None and not isinstance(assistant_message.content, str):
+                if assistant_message.content is not None and not isinstance(
+                    assistant_message.content, str
+                ):
                     raw = assistant_message.content
                     if isinstance(raw, dict):
-                        assistant_message.content = raw.get("text", "") or raw.get("content", "") or json.dumps(raw)
+                        assistant_message.content = (
+                            raw.get("text", "")
+                            or raw.get("content", "")
+                            or json.dumps(raw)
+                        )
                     elif isinstance(raw, list):
                         # Multimodal content list — extract text parts
                         parts = []
@@ -6504,61 +7637,77 @@ class AIAgent:
                 # Handle assistant response
                 if assistant_message.content and not self.quiet_mode:
                     if self.verbose_logging:
-                        self._vprint(f"{self.log_prefix}🤖 Assistant: {assistant_message.content}")
+                        self._vprint(
+                            f"{self.log_prefix}🤖 Assistant: {assistant_message.content}"
+                        )
                     else:
-                        self._vprint(f"{self.log_prefix}🤖 Assistant: {assistant_message.content[:100]}{'...' if len(assistant_message.content) > 100 else ''}")
+                        self._vprint(
+                            f"{self.log_prefix}🤖 Assistant: {assistant_message.content[:100]}{'...' if len(assistant_message.content) > 100 else ''}"
+                        )
 
                 # Notify progress callback of model's thinking (used by subagent
                 # delegation to relay the child's reasoning to the parent display).
                 # Guard: only fire for subagents (_delegate_depth >= 1) to avoid
                 # spamming gateway platforms with the main agent's every thought.
-                if (assistant_message.content and self.tool_progress_callback
-                        and getattr(self, '_delegate_depth', 0) > 0):
+                if (
+                    assistant_message.content
+                    and self.tool_progress_callback
+                    and getattr(self, "_delegate_depth", 0) > 0
+                ):
                     _think_text = assistant_message.content.strip()
                     # Strip reasoning XML tags that shouldn't leak to parent display
                     _think_text = re.sub(
-                        r'</?(?:REASONING_SCRATCHPAD|think|reasoning)>', '', _think_text
+                        r"</?(?:REASONING_SCRATCHPAD|think|reasoning)>", "", _think_text
                     ).strip()
-                    first_line = _think_text.split('\n')[0][:80] if _think_text else ""
+                    first_line = _think_text.split("\n")[0][:80] if _think_text else ""
                     if first_line:
                         try:
                             self.tool_progress_callback("_thinking", first_line)
                         except Exception:
                             pass
-                
+
                 # Check for incomplete <REASONING_SCRATCHPAD> (opened but never closed)
                 # This means the model ran out of output tokens mid-reasoning — retry up to 2 times
                 if has_incomplete_scratchpad(assistant_message.content or ""):
-                    if not hasattr(self, '_incomplete_scratchpad_retries'):
+                    if not hasattr(self, "_incomplete_scratchpad_retries"):
                         self._incomplete_scratchpad_retries = 0
                     self._incomplete_scratchpad_retries += 1
-                    
-                    self._vprint(f"{self.log_prefix}⚠️  Incomplete <REASONING_SCRATCHPAD> detected (opened but never closed)")
-                    
+
+                    self._vprint(
+                        f"{self.log_prefix}⚠️  Incomplete <REASONING_SCRATCHPAD> detected (opened but never closed)"
+                    )
+
                     if self._incomplete_scratchpad_retries <= 2:
-                        self._vprint(f"{self.log_prefix}🔄 Retrying API call ({self._incomplete_scratchpad_retries}/2)...")
+                        self._vprint(
+                            f"{self.log_prefix}🔄 Retrying API call ({self._incomplete_scratchpad_retries}/2)..."
+                        )
                         # Don't add the broken message, just retry
                         continue
                     else:
                         # Max retries - discard this turn and save as partial
-                        self._vprint(f"{self.log_prefix}❌ Max retries (2) for incomplete scratchpad. Saving as partial.", force=True)
+                        self._vprint(
+                            f"{self.log_prefix}❌ Max retries (2) for incomplete scratchpad. Saving as partial.",
+                            force=True,
+                        )
                         self._incomplete_scratchpad_retries = 0
-                        
-                        rolled_back_messages = self._get_messages_up_to_last_assistant(messages)
+
+                        rolled_back_messages = self._get_messages_up_to_last_assistant(
+                            messages
+                        )
                         self._cleanup_task_resources(effective_task_id)
                         self._persist_session(messages, conversation_history)
-                        
+
                         return {
                             "final_response": None,
                             "messages": rolled_back_messages,
                             "api_calls": api_call_count,
                             "completed": False,
                             "partial": True,
-                            "error": "Incomplete REASONING_SCRATCHPAD after 2 retries"
+                            "error": "Incomplete REASONING_SCRATCHPAD after 2 retries",
                         }
-                
+
                 # Reset incomplete scratchpad counter on clean response
-                if hasattr(self, '_incomplete_scratchpad_retries'):
+                if hasattr(self, "_incomplete_scratchpad_retries"):
                     self._incomplete_scratchpad_retries = 0
 
                 if self.api_mode == "codex_responses" and finish_reason == "incomplete":
@@ -6566,26 +7715,46 @@ class AIAgent:
                         self._codex_incomplete_retries = 0
                     self._codex_incomplete_retries += 1
 
-                    interim_msg = self._build_assistant_message(assistant_message, finish_reason)
-                    interim_has_content = bool((interim_msg.get("content") or "").strip())
-                    interim_has_reasoning = bool(interim_msg.get("reasoning", "").strip()) if isinstance(interim_msg.get("reasoning"), str) else False
-                    interim_has_codex_reasoning = bool(interim_msg.get("codex_reasoning_items"))
+                    interim_msg = self._build_assistant_message(
+                        assistant_message, finish_reason
+                    )
+                    interim_has_content = bool(
+                        (interim_msg.get("content") or "").strip()
+                    )
+                    interim_has_reasoning = (
+                        bool(interim_msg.get("reasoning", "").strip())
+                        if isinstance(interim_msg.get("reasoning"), str)
+                        else False
+                    )
+                    interim_has_codex_reasoning = bool(
+                        interim_msg.get("codex_reasoning_items")
+                    )
 
-                    if interim_has_content or interim_has_reasoning or interim_has_codex_reasoning:
+                    if (
+                        interim_has_content
+                        or interim_has_reasoning
+                        or interim_has_codex_reasoning
+                    ):
                         last_msg = messages[-1] if messages else None
                         # Duplicate detection: two consecutive incomplete assistant
                         # messages with identical content AND reasoning are collapsed.
                         # For reasoning-only messages (codex_reasoning_items differ but
                         # visible content/reasoning are both empty), we also compare
                         # the encrypted items to avoid silently dropping new state.
-                        last_codex_items = last_msg.get("codex_reasoning_items") if isinstance(last_msg, dict) else None
+                        last_codex_items = (
+                            last_msg.get("codex_reasoning_items")
+                            if isinstance(last_msg, dict)
+                            else None
+                        )
                         interim_codex_items = interim_msg.get("codex_reasoning_items")
                         duplicate_interim = (
                             isinstance(last_msg, dict)
                             and last_msg.get("role") == "assistant"
                             and last_msg.get("finish_reason") == "incomplete"
-                            and (last_msg.get("content") or "") == (interim_msg.get("content") or "")
-                            and (last_msg.get("reasoning") or "") == (interim_msg.get("reasoning") or "")
+                            and (last_msg.get("content") or "")
+                            == (interim_msg.get("content") or "")
+                            and (last_msg.get("reasoning") or "")
+                            == (interim_msg.get("reasoning") or "")
                             and last_codex_items == interim_codex_items
                         )
                         if not duplicate_interim:
@@ -6593,7 +7762,9 @@ class AIAgent:
 
                     if self._codex_incomplete_retries < 3:
                         if not self.quiet_mode:
-                            self._vprint(f"{self.log_prefix}↻ Codex response incomplete; continuing turn ({self._codex_incomplete_retries}/3)")
+                            self._vprint(
+                                f"{self.log_prefix}↻ Codex response incomplete; continuing turn ({self._codex_incomplete_retries}/3)"
+                            )
                         self._session_messages = messages
                         self._save_session_log(messages)
                         continue
@@ -6610,42 +7781,58 @@ class AIAgent:
                     }
                 elif hasattr(self, "_codex_incomplete_retries"):
                     self._codex_incomplete_retries = 0
-                
+
                 # Check for tool calls
                 if assistant_message.tool_calls:
                     if not self.quiet_mode:
-                        self._vprint(f"{self.log_prefix}🔧 Processing {len(assistant_message.tool_calls)} tool call(s)...")
-                    
+                        self._vprint(
+                            f"{self.log_prefix}🔧 Processing {len(assistant_message.tool_calls)} tool call(s)..."
+                        )
+
                     if self.verbose_logging:
                         for tc in assistant_message.tool_calls:
-                            logging.debug(f"Tool call: {tc.function.name} with args: {tc.function.arguments[:200]}...")
-                    
+                            logging.debug(
+                                f"Tool call: {tc.function.name} with args: {tc.function.arguments[:200]}..."
+                            )
+
                     # Validate tool call names - detect model hallucinations
                     # Repair mismatched tool names before validating
                     for tc in assistant_message.tool_calls:
                         if tc.function.name not in self.valid_tool_names:
                             repaired = self._repair_tool_call(tc.function.name)
                             if repaired:
-                                print(f"{self.log_prefix}🔧 Auto-repaired tool name: '{tc.function.name}' -> '{repaired}'")
+                                print(
+                                    f"{self.log_prefix}🔧 Auto-repaired tool name: '{tc.function.name}' -> '{repaired}'"
+                                )
                                 tc.function.name = repaired
                     invalid_tool_calls = [
-                        tc.function.name for tc in assistant_message.tool_calls
+                        tc.function.name
+                        for tc in assistant_message.tool_calls
                         if tc.function.name not in self.valid_tool_names
                     ]
                     if invalid_tool_calls:
                         # Track retries for invalid tool calls
-                        if not hasattr(self, '_invalid_tool_retries'):
+                        if not hasattr(self, "_invalid_tool_retries"):
                             self._invalid_tool_retries = 0
                         self._invalid_tool_retries += 1
 
                         # Return helpful error to model — model can self-correct next turn
                         available = ", ".join(sorted(self.valid_tool_names))
                         invalid_name = invalid_tool_calls[0]
-                        invalid_preview = invalid_name[:80] + "..." if len(invalid_name) > 80 else invalid_name
-                        self._vprint(f"{self.log_prefix}⚠️  Unknown tool '{invalid_preview}' — sending error to model for self-correction ({self._invalid_tool_retries}/3)")
+                        invalid_preview = (
+                            invalid_name[:80] + "..."
+                            if len(invalid_name) > 80
+                            else invalid_name
+                        )
+                        self._vprint(
+                            f"{self.log_prefix}⚠️  Unknown tool '{invalid_preview}' — sending error to model for self-correction ({self._invalid_tool_retries}/3)"
+                        )
 
                         if self._invalid_tool_retries >= 3:
-                            self._vprint(f"{self.log_prefix}❌ Max retries (3) for invalid tool calls exceeded. Stopping as partial.", force=True)
+                            self._vprint(
+                                f"{self.log_prefix}❌ Max retries (3) for invalid tool calls exceeded. Stopping as partial.",
+                                force=True,
+                            )
                             self._invalid_tool_retries = 0
                             self._persist_session(messages, conversation_history)
                             return {
@@ -6654,26 +7841,30 @@ class AIAgent:
                                 "api_calls": api_call_count,
                                 "completed": False,
                                 "partial": True,
-                                "error": f"Model generated invalid tool call: {invalid_preview}"
+                                "error": f"Model generated invalid tool call: {invalid_preview}",
                             }
 
-                        assistant_msg = self._build_assistant_message(assistant_message, finish_reason)
+                        assistant_msg = self._build_assistant_message(
+                            assistant_message, finish_reason
+                        )
                         messages.append(assistant_msg)
                         for tc in assistant_message.tool_calls:
                             if tc.function.name not in self.valid_tool_names:
                                 content = f"Tool '{tc.function.name}' does not exist. Available tools: {available}"
                             else:
                                 content = f"Skipped: another tool call in this turn used an invalid name. Please retry this tool call."
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc.id,
-                                "content": content,
-                            })
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc.id,
+                                    "content": content,
+                                }
+                            )
                         continue
                     # Reset retry counter on successful tool call validation
-                    if hasattr(self, '_invalid_tool_retries'):
+                    if hasattr(self, "_invalid_tool_retries"):
                         self._invalid_tool_retries = 0
-                    
+
                     # Validate tool call arguments are valid JSON
                     # Handle empty strings as empty objects (common model quirk)
                     invalid_json_args = []
@@ -6693,33 +7884,45 @@ class AIAgent:
                             json.loads(args)
                         except json.JSONDecodeError as e:
                             invalid_json_args.append((tc.function.name, str(e)))
-                    
+
                     if invalid_json_args:
                         # Track retries for invalid JSON arguments
                         self._invalid_json_retries += 1
-                        
+
                         tool_name, error_msg = invalid_json_args[0]
-                        self._vprint(f"{self.log_prefix}⚠️  Invalid JSON in tool call arguments for '{tool_name}': {error_msg}")
-                        
+                        self._vprint(
+                            f"{self.log_prefix}⚠️  Invalid JSON in tool call arguments for '{tool_name}': {error_msg}"
+                        )
+
                         if self._invalid_json_retries < 3:
-                            self._vprint(f"{self.log_prefix}🔄 Retrying API call ({self._invalid_json_retries}/3)...")
+                            self._vprint(
+                                f"{self.log_prefix}🔄 Retrying API call ({self._invalid_json_retries}/3)..."
+                            )
                             # Don't add anything to messages, just retry the API call
                             continue
                         else:
                             # Instead of returning partial, inject tool error results so the model can recover.
                             # Using tool results (not user messages) preserves role alternation.
-                            self._vprint(f"{self.log_prefix}⚠️  Injecting recovery tool results for invalid JSON...")
+                            self._vprint(
+                                f"{self.log_prefix}⚠️  Injecting recovery tool results for invalid JSON..."
+                            )
                             self._invalid_json_retries = 0  # Reset for next attempt
-                            
+
                             # Append the assistant message with its (broken) tool_calls
-                            recovery_assistant = self._build_assistant_message(assistant_message, finish_reason)
+                            recovery_assistant = self._build_assistant_message(
+                                assistant_message, finish_reason
+                            )
                             messages.append(recovery_assistant)
-                            
+
                             # Respond with tool error results for each tool call
                             invalid_names = {name for name, _ in invalid_json_args}
                             for tc in assistant_message.tool_calls:
                                 if tc.function.name in invalid_names:
-                                    err = next(e for n, e in invalid_json_args if n == tc.function.name)
+                                    err = next(
+                                        e
+                                        for n, e in invalid_json_args
+                                        if n == tc.function.name
+                                    )
                                     tool_result = (
                                         f"Error: Invalid JSON arguments. {err}. "
                                         f"For tools with no required parameters, use an empty object: {{}}. "
@@ -6727,13 +7930,15 @@ class AIAgent:
                                     )
                                 else:
                                     tool_result = "Skipped: other tool call in this response had invalid JSON."
-                                messages.append({
-                                    "role": "tool",
-                                    "tool_call_id": tc.id,
-                                    "content": tool_result,
-                                })
+                                messages.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tc.id,
+                                        "content": tool_result,
+                                    }
+                                )
                             continue
-                    
+
                     # Reset retry counter on successful JSON validation
                     self._invalid_json_retries = 0
 
@@ -6745,14 +7950,18 @@ class AIAgent:
                         assistant_message.tool_calls
                     )
 
-                    assistant_msg = self._build_assistant_message(assistant_message, finish_reason)
-                    
+                    assistant_msg = self._build_assistant_message(
+                        assistant_message, finish_reason
+                    )
+
                     # If this turn has both content AND tool_calls, capture the content
                     # as a fallback final response. Common pattern: model delivers its
                     # answer and calls memory/skill tools as a side-effect in the same
                     # turn. If the follow-up turn after tools is empty, we use this.
                     turn_content = assistant_message.content or ""
-                    if turn_content and self._has_content_after_think_block(turn_content):
+                    if turn_content and self._has_content_after_think_block(
+                        turn_content
+                    ):
                         self._last_content_with_tools = turn_content
                         # The response was already streamed to the user in the
                         # response box.  The remaining tool calls (memory, skill,
@@ -6764,7 +7973,7 @@ class AIAgent:
                             clean = self._strip_think_blocks(turn_content).strip()
                             if clean:
                                 self._vprint(f"  ┊ 💬 {clean}")
-                    
+
                     messages.append(assistant_msg)
 
                     # Close any open streaming display (response box, reasoning
@@ -6780,7 +7989,9 @@ class AIAgent:
                             pass
 
                     _msg_count_before_tools = len(messages)
-                    self._execute_tool_calls(assistant_message, messages, effective_task_id, api_call_count)
+                    self._execute_tool_calls(
+                        assistant_message, messages, effective_task_id, api_call_count
+                    )
 
                     # Signal that a paragraph break is needed before the next
                     # streamed text.  We don't emit it immediately because
@@ -6793,10 +8004,12 @@ class AIAgent:
                     # Refund the iteration if the ONLY tool(s) called were
                     # execute_code (programmatic tool calling).  These are
                     # cheap RPC-style calls that shouldn't eat the budget.
-                    _tc_names = {tc.function.name for tc in assistant_message.tool_calls}
+                    _tc_names = {
+                        tc.function.name for tc in assistant_message.tool_calls
+                    }
                     if _tc_names == {"execute_code"}:
                         self.iteration_budget.refund()
-                    
+
                     # Estimate next prompt size using real token counts from the
                     # last API response + rough estimate of newly appended tool
                     # results.  This catches cases where tool results push the
@@ -6804,11 +8017,14 @@ class AIAgent:
                     # (e.g. large file reads, web extractions).
                     _compressor = self.context_compressor
                     _new_tool_msgs = messages[_msg_count_before_tools:]
-                    _new_chars = sum(len(str(m.get("content", "") or "")) for m in _new_tool_msgs)
+                    _new_chars = sum(
+                        len(str(m.get("content", "") or "")) for m in _new_tool_msgs
+                    )
                     _estimated_next_prompt = (
                         _compressor.last_prompt_tokens
                         + _compressor.last_completion_tokens
-                        + _new_chars // 3  # conservative: JSON-heavy tool results ≈ 3 chars/token
+                        + _new_chars
+                        // 3  # conservative: JSON-heavy tool results ≈ 3 chars/token
                     )
 
                     # ── Context pressure warnings (user-facing only) ──────────
@@ -6818,53 +8034,73 @@ class AIAgent:
                     # Does not inject into messages — just prints to CLI output
                     # and fires status_callback for gateway platforms.
                     if _compressor.threshold_tokens > 0:
-                        _compaction_progress = _estimated_next_prompt / _compressor.threshold_tokens
+                        _compaction_progress = (
+                            _estimated_next_prompt / _compressor.threshold_tokens
+                        )
                         if _compaction_progress >= 0.85 and not self._context_70_warned:
                             self._context_70_warned = True
-                            self._context_50_warned = True  # skip first tier if we jumped past it
-                            self._emit_context_pressure(_compaction_progress, _compressor)
-                        elif _compaction_progress >= 0.60 and not self._context_50_warned:
+                            self._context_50_warned = (
+                                True  # skip first tier if we jumped past it
+                            )
+                            self._emit_context_pressure(
+                                _compaction_progress, _compressor
+                            )
+                        elif (
+                            _compaction_progress >= 0.60 and not self._context_50_warned
+                        ):
                             self._context_50_warned = True
-                            self._emit_context_pressure(_compaction_progress, _compressor)
+                            self._emit_context_pressure(
+                                _compaction_progress, _compressor
+                            )
 
-                    if self.compression_enabled and _compressor.should_compress(_estimated_next_prompt):
+                    if self.compression_enabled and _compressor.should_compress(
+                        _estimated_next_prompt
+                    ):
                         messages, active_system_prompt = self._compress_context(
-                            messages, system_message,
+                            messages,
+                            system_message,
                             approx_tokens=self.context_compressor.last_prompt_tokens,
                             task_id=effective_task_id,
                         )
-                    
+
                     # Save session log incrementally (so progress is visible even if interrupted)
                     self._session_messages = messages
                     self._save_session_log(messages)
-                    
+
                     # Continue loop for next response
                     continue
-                
+
                 else:
                     # No tool calls - this is the final response
                     final_response = assistant_message.content or ""
-                    
+
                     # Check if response only has think block with no actual content after it
                     if not self._has_content_after_think_block(final_response):
                         # If the previous turn already delivered real content alongside
                         # tool calls (e.g. "You're welcome!" + memory save), the model
                         # has nothing more to say. Use the earlier content immediately
                         # instead of wasting API calls on retries that won't help.
-                        fallback = getattr(self, '_last_content_with_tools', None)
+                        fallback = getattr(self, "_last_content_with_tools", None)
                         if fallback:
-                            logger.debug("Empty follow-up after tool calls — using prior turn content as final response")
+                            logger.debug(
+                                "Empty follow-up after tool calls — using prior turn content as final response"
+                            )
                             self._last_content_with_tools = None
                             self._empty_content_retries = 0
                             for i in range(len(messages) - 1, -1, -1):
                                 msg = messages[i]
-                                if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                                if msg.get("role") == "assistant" and msg.get(
+                                    "tool_calls"
+                                ):
                                     tool_names = []
                                     for tc in msg["tool_calls"]:
-                                        if not tc or not isinstance(tc, dict): continue
+                                        if not tc or not isinstance(tc, dict):
+                                            continue
                                         fn = tc.get("function", {})
                                         tool_names.append(fn.get("name", "unknown"))
-                                    msg["content"] = f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
+                                    msg["content"] = (
+                                        f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
+                                    )
                                     break
                             final_response = self._strip_think_blocks(fallback).strip()
                             self._response_was_previewed = True
@@ -6872,52 +8108,81 @@ class AIAgent:
 
                         # No fallback available — this is a genuine empty response.
                         # Retry in case the model just had a bad generation.
-                        if not hasattr(self, '_empty_content_retries'):
+                        if not hasattr(self, "_empty_content_retries"):
                             self._empty_content_retries = 0
                         self._empty_content_retries += 1
-                        
+
                         reasoning_text = self._extract_reasoning(assistant_message)
-                        self._vprint(f"{self.log_prefix}⚠️  Response only contains think block with no content after it")
+                        self._vprint(
+                            f"{self.log_prefix}⚠️  Response only contains think block with no content after it"
+                        )
                         if reasoning_text:
-                            reasoning_preview = reasoning_text[:500] + "..." if len(reasoning_text) > 500 else reasoning_text
-                            self._vprint(f"{self.log_prefix}   Reasoning: {reasoning_preview}")
+                            reasoning_preview = (
+                                reasoning_text[:500] + "..."
+                                if len(reasoning_text) > 500
+                                else reasoning_text
+                            )
+                            self._vprint(
+                                f"{self.log_prefix}   Reasoning: {reasoning_preview}"
+                            )
                         else:
-                            content_preview = final_response[:80] + "..." if len(final_response) > 80 else final_response
-                            self._vprint(f"{self.log_prefix}   Content: '{content_preview}'")
-                        
+                            content_preview = (
+                                final_response[:80] + "..."
+                                if len(final_response) > 80
+                                else final_response
+                            )
+                            self._vprint(
+                                f"{self.log_prefix}   Content: '{content_preview}'"
+                            )
+
                         if self._empty_content_retries < 3:
-                            self._vprint(f"{self.log_prefix}🔄 Retrying API call ({self._empty_content_retries}/3)...")
+                            self._vprint(
+                                f"{self.log_prefix}🔄 Retrying API call ({self._empty_content_retries}/3)..."
+                            )
                             continue
                         else:
-                            self._vprint(f"{self.log_prefix}❌ Max retries (3) for empty content exceeded.", force=True)
+                            self._vprint(
+                                f"{self.log_prefix}❌ Max retries (3) for empty content exceeded.",
+                                force=True,
+                            )
                             self._empty_content_retries = 0
-                            
+
                             # If a prior tool_calls turn had real content, salvage it:
                             # rewrite that turn's content to a brief tool description,
                             # and use the original content as the final response here.
-                            fallback = getattr(self, '_last_content_with_tools', None)
+                            fallback = getattr(self, "_last_content_with_tools", None)
                             if fallback:
                                 self._last_content_with_tools = None
                                 # Find the last assistant message with tool_calls and rewrite it
                                 for i in range(len(messages) - 1, -1, -1):
                                     msg = messages[i]
-                                    if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                                    if msg.get("role") == "assistant" and msg.get(
+                                        "tool_calls"
+                                    ):
                                         tool_names = []
                                         for tc in msg["tool_calls"]:
-                                            if not tc or not isinstance(tc, dict): continue
+                                            if not tc or not isinstance(tc, dict):
+                                                continue
                                             fn = tc.get("function", {})
                                             tool_names.append(fn.get("name", "unknown"))
-                                        msg["content"] = f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
+                                        msg["content"] = (
+                                            f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
+                                        )
                                         break
                                 # Strip <think> blocks from fallback content for user display
-                                final_response = self._strip_think_blocks(fallback).strip()
+                                final_response = self._strip_think_blocks(
+                                    fallback
+                                ).strip()
                                 self._response_was_previewed = True
                                 break
-                            
+
                             # No fallback -- if reasoning_text exists, the model put its
                             # entire response inside <think> tags; use that as the content.
                             if reasoning_text:
-                                self._vprint(f"{self.log_prefix}Using reasoning as response content (model wrapped entire response in think tags).", force=True)
+                                self._vprint(
+                                    f"{self.log_prefix}Using reasoning as response content (model wrapped entire response in think tags).",
+                                    force=True,
+                                )
                                 final_response = reasoning_text
                                 empty_msg = {
                                     "role": "assistant",
@@ -6946,11 +8211,11 @@ class AIAgent:
                                 "api_calls": api_call_count,
                                 "completed": False,
                                 "partial": True,
-                                "error": "Model generated only think blocks with no actual response after 3 retries"
+                                "error": "Model generated only think blocks with no actual response after 3 retries",
                             }
-                    
+
                     # Reset retry counter on successful content
-                    if hasattr(self, '_empty_content_retries'):
+                    if hasattr(self, "_empty_content_retries"):
                         self._empty_content_retries = 0
 
                     if (
@@ -6964,7 +8229,9 @@ class AIAgent:
                         )
                     ):
                         codex_ack_continuations += 1
-                        interim_msg = self._build_assistant_message(assistant_message, "incomplete")
+                        interim_msg = self._build_assistant_message(
+                            assistant_message, "incomplete"
+                        )
                         messages.append(interim_msg)
 
                         continue_msg = {
@@ -6985,28 +8252,32 @@ class AIAgent:
                         final_response = truncated_response_prefix + final_response
                         truncated_response_prefix = ""
                         length_continue_retries = 0
-                    
+
                     # Strip <think> blocks from user-facing response (keep raw in messages for trajectory)
                     final_response = self._strip_think_blocks(final_response).strip()
-                    
-                    final_msg = self._build_assistant_message(assistant_message, finish_reason)
-                    
+
+                    final_msg = self._build_assistant_message(
+                        assistant_message, finish_reason
+                    )
+
                     messages.append(final_msg)
-                    
+
                     if not self.quiet_mode:
-                        self._safe_print(f"🎉 Conversation completed after {api_call_count} OpenAI-compatible API call(s)")
+                        self._safe_print(
+                            f"🎉 Conversation completed after {api_call_count} OpenAI-compatible API call(s)"
+                        )
                     break
-                
+
             except Exception as e:
                 error_msg = f"Error during OpenAI-compatible API call #{api_call_count}: {str(e)}"
                 try:
                     print(f"❌ {error_msg}")
                 except OSError:
                     logger.error(error_msg)
-                
+
                 if self.verbose_logging:
                     logging.exception("Detailed error information:")
-                
+
                 # If an assistant message with tool_calls was already appended,
                 # the API expects a role="tool" result for every tool_call_id.
                 # Fill in error results for any that weren't answered yet.
@@ -7020,11 +8291,12 @@ class AIAgent:
                     if msg.get("role") == "assistant" and msg.get("tool_calls"):
                         answered_ids = {
                             m["tool_call_id"]
-                            for m in messages[idx + 1:]
+                            for m in messages[idx + 1 :]
                             if isinstance(m, dict) and m.get("role") == "tool"
                         }
                         for tc in msg["tool_calls"]:
-                            if not tc or not isinstance(tc, dict): continue
+                            if not tc or not isinstance(tc, dict):
+                                continue
                             if tc["id"] not in answered_ids:
                                 err_msg = {
                                     "role": "tool",
@@ -7034,7 +8306,7 @@ class AIAgent:
                                 messages.append(err_msg)
                         pending_handled = True
                     break
-                
+
                 # Non-tool errors don't need a synthetic message injected.
                 # The error is already printed to the user (line above), and
                 # the retry loop continues.  Injecting a fake user/assistant
@@ -7043,20 +8315,24 @@ class AIAgent:
 
                 # If we're near the limit, break to avoid infinite loops
                 if api_call_count >= self.max_iterations - 1:
-                    final_response = f"I apologize, but I encountered repeated errors: {error_msg}"
+                    final_response = (
+                        f"I apologize, but I encountered repeated errors: {error_msg}"
+                    )
                     # Append as assistant so the history stays valid for
                     # session resume (avoids consecutive user messages).
                     messages.append({"role": "assistant", "content": final_response})
                     break
-        
+
         if final_response is None and (
             api_call_count >= self.max_iterations
             or self.iteration_budget.remaining <= 0
         ):
             if self.iteration_budget.remaining <= 0 and not self.quiet_mode:
-                print(f"\n⚠️  Session iteration budget exhausted ({self.iteration_budget.used}/{self.iteration_budget.max_total} used, including subagents)")
+                print(
+                    f"\n⚠️  Session iteration budget exhausted ({self.iteration_budget.used}/{self.iteration_budget.max_total} used, including subagents)"
+                )
             final_response = self._handle_max_iterations(messages, api_call_count)
-        
+
         # Determine if conversation completed successfully
         completed = final_response is not None and api_call_count < self.max_iterations
 
@@ -7102,17 +8378,20 @@ class AIAgent:
             "prompt_tokens": self.session_prompt_tokens,
             "completion_tokens": self.session_completion_tokens,
             "total_tokens": self.session_total_tokens,
-            "last_prompt_tokens": getattr(self.context_compressor, "last_prompt_tokens", 0) or 0,
+            "last_prompt_tokens": getattr(
+                self.context_compressor, "last_prompt_tokens", 0
+            )
+            or 0,
             "estimated_cost_usd": self.session_estimated_cost_usd,
             "cost_status": self.session_cost_status,
             "cost_source": self.session_cost_source,
         }
         self._response_was_previewed = False
-        
+
         # Include interrupt message if one triggered the interrupt
         if interrupted and self._interrupt_message:
             result["interrupt_message"] = self._interrupt_message
-        
+
         # Clear interrupt state after handling
         self.clear_interrupt()
 
@@ -7121,15 +8400,21 @@ class AIAgent:
 
         # Check skill trigger NOW — based on how many tool iterations THIS turn used.
         _should_review_skills = False
-        if (self._skill_nudge_interval > 0
-                and self._iters_since_skill >= self._skill_nudge_interval
-                and "skill_manage" in self.valid_tool_names):
+        if (
+            self._skill_nudge_interval > 0
+            and self._iters_since_skill >= self._skill_nudge_interval
+            and "skill_manage" in self.valid_tool_names
+        ):
             _should_review_skills = True
             self._iters_since_skill = 0
 
         # Background memory/skill review — runs AFTER the response is delivered
         # so it never competes with the user's task for model attention.
-        if final_response and not interrupted and (_should_review_memory or _should_review_skills):
+        if (
+            final_response
+            and not interrupted
+            and (_should_review_memory or _should_review_skills)
+        ):
             try:
                 self._spawn_background_review(
                     messages_snapshot=list(messages),
@@ -7168,7 +8453,7 @@ def main(
     save_trajectories: bool = False,
     save_sample: bool = False,
     verbose: bool = False,
-    log_prefix_chars: int = 20
+    log_prefix_chars: int = 20,
 ):
     """
     Main function for running the agent directly.
@@ -7194,58 +8479,69 @@ def main(
     """
     print("🤖 AI Agent with Tool Calling")
     print("=" * 50)
-    
+
     # Handle tool listing
     if list_tools:
-        from model_tools import get_all_tool_names, get_toolset_for_tool, get_available_toolsets
+        from model_tools import (
+            get_all_tool_names,
+            get_toolset_for_tool,
+            get_available_toolsets,
+        )
         from toolsets import get_all_toolsets, get_toolset_info
-        
+
         print("📋 Available Tools & Toolsets:")
         print("-" * 50)
-        
+
         # Show new toolsets system
         print("\n🎯 Predefined Toolsets (New System):")
         print("-" * 40)
         all_toolsets = get_all_toolsets()
-        
+
         # Group by category
         basic_toolsets = []
         composite_toolsets = []
         scenario_toolsets = []
-        
+
         for name, toolset in all_toolsets.items():
             info = get_toolset_info(name)
             if info:
                 entry = (name, info)
                 if name in ["web", "terminal", "vision", "creative", "reasoning"]:
                     basic_toolsets.append(entry)
-                elif name in ["research", "development", "analysis", "content_creation", "full_stack"]:
+                elif name in [
+                    "research",
+                    "development",
+                    "analysis",
+                    "content_creation",
+                    "full_stack",
+                ]:
                     composite_toolsets.append(entry)
                 else:
                     scenario_toolsets.append(entry)
-        
+
         # Print basic toolsets
         print("\n📌 Basic Toolsets:")
         for name, info in basic_toolsets:
-            tools_str = ', '.join(info['resolved_tools']) if info['resolved_tools'] else 'none'
+            tools_str = (
+                ", ".join(info["resolved_tools"]) if info["resolved_tools"] else "none"
+            )
             print(f"  • {name:15} - {info['description']}")
             print(f"    Tools: {tools_str}")
-        
+
         # Print composite toolsets
         print("\n📂 Composite Toolsets (built from other toolsets):")
         for name, info in composite_toolsets:
-            includes_str = ', '.join(info['includes']) if info['includes'] else 'none'
+            includes_str = ", ".join(info["includes"]) if info["includes"] else "none"
             print(f"  • {name:15} - {info['description']}")
             print(f"    Includes: {includes_str}")
             print(f"    Total tools: {info['tool_count']}")
-        
+
         # Print scenario-specific toolsets
         print("\n🎭 Scenario-Specific Toolsets:")
         for name, info in scenario_toolsets:
             print(f"  • {name:20} - {info['description']}")
             print(f"    Total tools: {info['tool_count']}")
-        
-        
+
         # Show legacy toolset compatibility
         print("\n📦 Legacy Toolsets (for backward compatibility):")
         legacy_toolsets = get_available_toolsets()
@@ -7254,47 +8550,57 @@ def main(
             print(f"  {status} {name}: {info['description']}")
             if not info["available"]:
                 print(f"    Requirements: {', '.join(info['requirements'])}")
-        
+
         # Show individual tools
         all_tools = get_all_tool_names()
         print(f"\n🔧 Individual Tools ({len(all_tools)} available):")
         for tool_name in sorted(all_tools):
             toolset = get_toolset_for_tool(tool_name)
             print(f"  📌 {tool_name} (from {toolset})")
-        
+
         print(f"\n💡 Usage Examples:")
         print(f"  # Use predefined toolsets")
-        print(f"  python run_agent.py --enabled_toolsets=research --query='search for Python news'")
-        print(f"  python run_agent.py --enabled_toolsets=development --query='debug this code'")
-        print(f"  python run_agent.py --enabled_toolsets=safe --query='analyze without terminal'")
+        print(
+            f"  python run_agent.py --enabled_toolsets=research --query='search for Python news'"
+        )
+        print(
+            f"  python run_agent.py --enabled_toolsets=development --query='debug this code'"
+        )
+        print(
+            f"  python run_agent.py --enabled_toolsets=safe --query='analyze without terminal'"
+        )
         print(f"  ")
         print(f"  # Combine multiple toolsets")
-        print(f"  python run_agent.py --enabled_toolsets=web,vision --query='analyze website'")
+        print(
+            f"  python run_agent.py --enabled_toolsets=web,vision --query='analyze website'"
+        )
         print(f"  ")
         print(f"  # Disable toolsets")
-        print(f"  python run_agent.py --disabled_toolsets=terminal --query='no command execution'")
+        print(
+            f"  python run_agent.py --disabled_toolsets=terminal --query='no command execution'"
+        )
         print(f"  ")
         print(f"  # Run with trajectory saving enabled")
         print(f"  python run_agent.py --save_trajectories --query='your question here'")
         return
-    
+
     # Parse toolset selection arguments
     enabled_toolsets_list = None
     disabled_toolsets_list = None
-    
+
     if enabled_toolsets:
         enabled_toolsets_list = [t.strip() for t in enabled_toolsets.split(",")]
         print(f"🎯 Enabled toolsets: {enabled_toolsets_list}")
-    
+
     if disabled_toolsets:
         disabled_toolsets_list = [t.strip() for t in disabled_toolsets.split(",")]
         print(f"🚫 Disabled toolsets: {disabled_toolsets_list}")
-    
+
     if save_trajectories:
         print(f"💾 Trajectory saving: ENABLED")
         print(f"   - Successful conversations → trajectory_samples.jsonl")
         print(f"   - Failed conversations → failed_trajectories.jsonl")
-    
+
     # Initialize agent with provided parameters
     try:
         agent = AIAgent(
@@ -7306,12 +8612,12 @@ def main(
             disabled_toolsets=disabled_toolsets_list,
             save_trajectories=save_trajectories,
             verbose_logging=verbose,
-            log_prefix_chars=log_prefix_chars
+            log_prefix_chars=log_prefix_chars,
         )
     except RuntimeError as e:
         print(f"❌ Failed to initialize agent: {e}")
         return
-    
+
     # Use provided query or default to Python 3.13 example
     if query is None:
         user_query = (
@@ -7320,45 +8626,43 @@ def main(
         )
     else:
         user_query = query
-    
+
     print(f"\n📝 User Query: {user_query}")
     print("\n" + "=" * 50)
-    
+
     # Run conversation
     result = agent.run_conversation(user_query)
-    
+
     print("\n" + "=" * 50)
     print("📋 CONVERSATION SUMMARY")
     print("=" * 50)
     print(f"✅ Completed: {result['completed']}")
     print(f"📞 API Calls: {result['api_calls']}")
     print(f"💬 Messages: {len(result['messages'])}")
-    
-    if result['final_response']:
+
+    if result["final_response"]:
         print(f"\n🎯 FINAL RESPONSE:")
         print("-" * 30)
-        print(result['final_response'])
-    
+        print(result["final_response"])
+
     # Save sample trajectory to UUID-named file if requested
     if save_sample:
         sample_id = str(uuid.uuid4())[:8]
         sample_filename = f"sample_{sample_id}.json"
-        
+
         # Convert messages to trajectory format (same as batch_runner)
         trajectory = agent._convert_to_trajectory_format(
-            result['messages'], 
-            user_query, 
-            result['completed']
+            result["messages"], user_query, result["completed"]
         )
-        
+
         entry = {
             "conversations": trajectory,
             "timestamp": datetime.now().isoformat(),
             "model": model,
-            "completed": result['completed'],
-            "query": user_query
+            "completed": result["completed"],
+            "query": user_query,
         }
-        
+
         try:
             with open(sample_filename, "w", encoding="utf-8") as f:
                 # Pretty-print JSON with indent for readability
@@ -7366,7 +8670,7 @@ def main(
             print(f"\n💾 Sample trajectory saved to: {sample_filename}")
         except Exception as e:
             print(f"\n⚠️ Failed to save sample: {e}")
-    
+
     print("\n👋 Agent execution completed!")
 
 
