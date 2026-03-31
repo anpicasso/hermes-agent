@@ -355,15 +355,17 @@ def telegram_bot_commands() -> list[tuple[str, str]]:
     """Return (command_name, description) pairs for Telegram setMyCommands.
 
     Telegram command names cannot contain hyphens, so they are replaced with
-    underscores.  Aliases are skipped -- Telegram shows one menu entry per
+    underscores. Aliases are skipped -- Telegram shows one menu entry per
     canonical command.
+
+    Command names are truncated to 32 characters to comply with Telegram Bot API limits.
     """
     overrides = _resolve_config_gates()
     result: list[tuple[str, str]] = []
     for cmd in COMMAND_REGISTRY:
         if not _is_gateway_available(cmd, overrides):
             continue
-        tg_name = cmd.name.replace("-", "_")
+        tg_name = cmd.name.replace("-", "_")[:32]  # Telegram limit: 32 chars
         result.append((tg_name, cmd.description))
     return result
 
@@ -431,7 +433,7 @@ def telegram_menu_commands(max_commands: int = 100) -> tuple[list[tuple[str, str
         pm = get_plugin_manager()
         plugin_cmds = getattr(pm, "_plugin_commands", {})
         for cmd_name in sorted(plugin_cmds):
-            tg_name = cmd_name.replace("-", "_")
+            tg_name = cmd_name.replace("-", "_")[:32]  # Telegram limit: 32 chars
             desc = "Plugin command"
             if len(desc) > 40:
                 desc = desc[:37] + "..."
@@ -459,7 +461,7 @@ def telegram_menu_commands(max_commands: int = 100) -> tuple[list[tuple[str, str
                 continue
             if skill_path.startswith(_hub_dir):
                 continue
-            name = cmd_key.lstrip("/").replace("-", "_")
+            name = cmd_key.lstrip("/").replace("-", "_")[:32]  # Telegram limit: 32 chars
             desc = info.get("description", "")
             # Keep descriptions short — setMyCommands has an undocumented
             # total payload limit.  40 chars fits 100 commands safely.
